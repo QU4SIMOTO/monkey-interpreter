@@ -1,152 +1,86 @@
-#[derive(Debug, PartialEq)]
-pub enum Token<'a> {
-    Assign,
-    Asterisk,
-    Slash,
-    Exclam,
-    Plus,
-    Minus,
-    LT,
-    GT,
-    Lparen,
-    Rparen,
-    Lbrace,
-    Rbrace,
-    Comma,
-    Semicolon,
-    EOF,
-    Let,
-    Ident(&'a [u8]),
-    Int(u64),
-    Function,
-    Eq,
-    Neq,
-    True,
-    False,
-    If,
-    Else,
-    Return,
-    Illegal,
-}
-
-impl<'a> Token<'a> {
-    fn len(&self) -> usize {
-        match self {
-            Token::Let => 3,
-            Token::Illegal => 1,
-            Token::Ident(ident) => ident.len(),
-            Token::Int(n) => (n.checked_ilog10().unwrap_or(0) + 1) as usize,
-            Token::Function => 2,
-            Token::EOF => 1,
-            Token::Eq => 2,
-            Token::Neq => 2,
-            Token::True => 4,
-            Token::False => 5,
-            Token::If => 2,
-            Token::Else => 4,
-            Token::Return => 6,
-            _ => 1,
-        }
-    }
-
-    fn lookup_ident(ident: &'a [u8]) -> Self {
-        match ident {
-            b"let" => Token::Let,
-            b"fn" => Token::Function,
-            b"true" => Token::True,
-            b"false" => Token::False,
-            b"if" => Token::If,
-            b"else" => Token::Else,
-            b"return" => Token::Return,
-            _ => Token::Ident(ident),
-        }
-    }
-
-    fn lookup_int(int: &'a [u8]) -> Self {
-        let int = std::str::from_utf8(int).expect("not UTF-8");
-        Token::Int(int.parse().expect("not a number"))
-    }
-}
+use crate::token::Token;
+use core::iter;
 
 pub struct Lexer<'a> {
-    input: &'a [u8],
-    position: usize,
+    input: iter::Peekable<std::str::Chars<'a>>,
+    have_produced_eof: bool,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(input: &'a [u8]) -> Self {
-        Lexer { input, position: 0 }
+    pub fn new(input: &'a str) -> Self {
+        Lexer {
+            input: input.chars().peekable(),
+            have_produced_eof: false,
+        }
     }
 
-    fn skip_whitespace(&mut self) {
-        if self.position >= self.input.len() || !self.input[self.position].is_ascii_whitespace() {
-            return;
-        }
-        for ch in self.input[self.position..].iter() {
-            if !ch.is_ascii_whitespace() {
-                return;
-            }
-            self.position += 1;
-        }
+    fn skip_whitespace(&mut self) -> Option<char> {
+        self.input
+            .by_ref()
+            .skip_while(|c| c.is_ascii_whitespace())
+            .next()
+    }
+
+    pub fn lex(input: &'a str) -> Vec<Token> {
+        Self::new(input).collect()
+    }
+
+    fn get_ident(&mut self, first_c: char) -> Token {
+        let ident = iter::once(first_c)
+            .chain(iter::from_fn(|| {
+                self.input
+                    .by_ref()
+                    .next_if(|c| c.is_ascii_uppercase() || c.is_ascii_lowercase())
+            }))
+            .collect::<String>();
+        Token::lookup_ident(ident)
+    }
+
+    fn get_int(&mut self, first_c: char) -> Token {
+        let n: i64 = iter::once(first_c)
+            .chain(iter::from_fn(|| {
+                self.input.by_ref().next_if(|c| c.is_ascii_digit())
+            }))
+            .collect::<String>()
+            .parse()
+            .expect("Parse i64");
+        Token::Int(n)
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Token<'a>;
+impl Iterator for Lexer<'_> {
+    type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.position > self.input.len() {
-            return None;
-        }
-        self.skip_whitespace();
-        let token = if self.position >= self.input.len() {
-            Token::EOF
-        } else {
-            match self.input[self.position] {
-                b'a'..=b'z' | b'A'..=b'Z' => {
-                    let end = self.input[self.position..]
-                        .iter()
-                        .position(|&ch| !ch.is_ascii_lowercase() && !ch.is_ascii_uppercase())
-                        .unwrap_or(self.input.len() - 1);
-                    Token::lookup_ident(&self.input[self.position..self.position + end])
-                }
-                b'0'..=b'9' => {
-                    let end = self.input[self.position..]
-                        .iter()
-                        .position(|&ch| !ch.is_ascii_digit())
-                        .unwrap_or(self.input.len() - 1);
-                    Token::lookup_int(&self.input[self.position..self.position + end])
-                }
-                b'=' => {
-                    if self.input.get(self.position + 1) == Some(&b'=') {
-                        Token::Eq
-                    } else {
-                        Token::Assign
-                    }
-                }
-                b'+' => Token::Plus,
-                b'-' => Token::Minus,
-                b'!' => {
-                    if self.input.get(self.position + 1) == Some(&b'=') {
-                        Token::Neq
-                    } else {
-                        Token::Exclam
-                    }
-                }
-                b'*' => Token::Asterisk,
-                b'/' => Token::Slash,
-                b'<' => Token::LT,
-                b'>' => Token::GT,
-                b'(' => Token::Lparen,
-                b')' => Token::Rparen,
-                b'{' => Token::Lbrace,
-                b'}' => Token::Rbrace,
-                b',' => Token::Comma,
-                b';' => Token::Semicolon,
-                _ => Token::Illegal,
-            }
+        let Some(c) = self.skip_whitespace() else {
+            return if self.have_produced_eof {
+                None
+            } else {
+                self.have_produced_eof = true;
+                Some(Token::EOF)
+            };
         };
-        self.position += token.len();
+        let token = match c {
+            'a'..='z' | 'A'..='Z' => self.get_ident(c),
+            '0'..='9' => self.get_int(c),
+            '=' if self.input.next_if(|&c| c == '=').is_some() => Token::Eq,
+            '=' => Token::Assign,
+            '!' if self.input.next_if(|&c| c == '=').is_some() => Token::Neq,
+            '!' => Token::Exclam,
+            '+' => Token::Plus,
+            '-' => Token::Minus,
+            '*' => Token::Asterisk,
+            '/' => Token::Slash,
+            '<' => Token::LT,
+            '>' => Token::GT,
+            '(' => Token::Lparen,
+            ')' => Token::Rparen,
+            '{' => Token::Lbrace,
+            '}' => Token::Rbrace,
+            ',' => Token::Comma,
+            ';' => Token::Semicolon,
+            _ => Token::Illegal,
+        };
         Some(token)
     }
 }
@@ -158,7 +92,7 @@ mod test {
     #[test]
     fn single_char_symbols() {
         assert_eq!(
-            Lexer::new(b"=+(){},!-/*<>;").collect::<Vec<_>>(),
+            Lexer::lex("=+(){},!-/*<>;"),
             vec![
                 Token::Assign,
                 Token::Plus,
@@ -180,10 +114,10 @@ mod test {
     }
 
     #[test]
-    fn simple_prog() {
+    fn simple_program() {
         assert_eq!(
-            Lexer::new(
-                b"let five = 5;
+            Lexer::lex(
+                "let five = 5;
             let ten = 10;
             let add = fn(x, y) {
                 x + y;
@@ -196,42 +130,41 @@ mod test {
             }
             10 == 10;
             10 != 9;"
-            )
-            .collect::<Vec<_>>(),
+            ),
             vec![
                 Token::Let,
-                Token::Ident(b"five"),
+                Token::Ident(String::from("five")),
                 Token::Assign,
                 Token::Int(5),
                 Token::Semicolon,
                 Token::Let,
-                Token::Ident(b"ten"),
+                Token::Ident(String::from("ten")),
                 Token::Assign,
                 Token::Int(10),
                 Token::Semicolon,
                 Token::Let,
-                Token::Ident(b"add"),
+                Token::Ident(String::from("add")),
                 Token::Assign,
                 Token::Function,
                 Token::Lparen,
-                Token::Ident(b"x"),
+                Token::Ident(String::from("x")),
                 Token::Comma,
-                Token::Ident(b"y"),
+                Token::Ident(String::from("y")),
                 Token::Rparen,
                 Token::Lbrace,
-                Token::Ident(b"x"),
+                Token::Ident(String::from("x")),
                 Token::Plus,
-                Token::Ident(b"y"),
+                Token::Ident(String::from("y")),
                 Token::Semicolon,
                 Token::Rbrace,
                 Token::Let,
-                Token::Ident(b"result"),
+                Token::Ident(String::from("result")),
                 Token::Assign,
-                Token::Ident(b"add"),
+                Token::Ident(String::from("add")),
                 Token::Lparen,
-                Token::Ident(b"five"),
+                Token::Ident(String::from("five")),
                 Token::Comma,
-                Token::Ident(b"ten"),
+                Token::Ident(String::from("ten")),
                 Token::Rparen,
                 Token::Semicolon,
                 Token::If,
@@ -267,16 +200,14 @@ mod test {
     #[test]
     fn trailing_space() {
         assert_eq!(
-            Lexer::new(
-                b"
-                     let x = 7;
+            Lexer::lex(
+                " let x = 7;
 
                      "
-            )
-            .collect::<Vec<_>>(),
+            ),
             vec![
                 Token::Let,
-                Token::Ident(b"x"),
+                Token::Ident(String::from("x")),
                 Token::Assign,
                 Token::Int(7),
                 Token::Semicolon,

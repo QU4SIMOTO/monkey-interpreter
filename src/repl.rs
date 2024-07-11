@@ -13,7 +13,7 @@ where
         writer.write(PROMPT).unwrap();
         writer.flush().unwrap();
         reader.read_line(&mut buffer).unwrap();
-        let tokens: Vec<_> = Lexer::new(buffer.as_bytes()).collect();
+        let tokens: Vec<_> = Lexer::new(buffer.as_str()).collect();
         write!(writer, "{:?}\n", tokens).unwrap();
     }
 }
