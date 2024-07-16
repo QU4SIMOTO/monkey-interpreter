@@ -1,4 +1,5 @@
 use std::fmt;
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -18,8 +19,8 @@ pub enum Token {
     Semicolon,
     EOF,
     Let,
-    Ident(String),
-    Int(i64),
+    Ident(Rc<String>),
+    Int(u64),
     Function,
     Eq,
     Neq,
@@ -81,11 +82,19 @@ impl Token {
             "if" => Token::If,
             "else" => Token::Else,
             "return" => Token::Return,
-            _ => Token::Ident(ident),
+            _ => Token::Ident(ident.into()),
         }
     }
 
     pub(crate) fn is_same_variant(&self, other: impl AsRef<str>) -> bool {
-        self.as_ref() == other.as_ref()
+        if let Token::Ident(_) = self {
+            other.as_ref() == "ident"
+        } else {
+            self.as_ref() == other.as_ref()
+        }
+    }
+
+    pub(crate) fn new_ident(ident: impl Into<String>) -> Self {
+        Self::Ident(Rc::new(ident.into()))
     }
 }

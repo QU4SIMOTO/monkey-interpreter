@@ -26,24 +26,22 @@ impl<'a> Lexer<'a> {
     }
 
     fn get_ident(&mut self, first_c: char) -> Token {
-        let ident = iter::once(first_c)
+        let ident: String = iter::once(first_c)
             .chain(iter::from_fn(|| {
-                self.input
-                    .by_ref()
-                    .next_if(|c| c.is_ascii_uppercase() || c.is_ascii_lowercase())
+                self.input.by_ref().next_if(|c| c.is_alphanumeric())
             }))
-            .collect::<String>();
+            .collect();
         Token::lookup_ident(ident)
     }
 
     fn get_int(&mut self, first_c: char) -> Token {
-        let n: i64 = iter::once(first_c)
+        let n: u64 = iter::once(first_c)
             .chain(iter::from_fn(|| {
                 self.input.by_ref().next_if(|c| c.is_ascii_digit())
             }))
             .collect::<String>()
             .parse()
-            .expect("Parse i64");
+            .expect("Failed to parse int");
         Token::Int(n)
     }
 }
@@ -133,38 +131,38 @@ mod test {
             ),
             vec![
                 Token::Let,
-                Token::Ident(String::from("five")),
+                Token::new_ident("five"),
                 Token::Assign,
                 Token::Int(5),
                 Token::Semicolon,
                 Token::Let,
-                Token::Ident(String::from("ten")),
+                Token::new_ident("ten"),
                 Token::Assign,
                 Token::Int(10),
                 Token::Semicolon,
                 Token::Let,
-                Token::Ident(String::from("add")),
+                Token::new_ident("add"),
                 Token::Assign,
                 Token::Function,
                 Token::Lparen,
-                Token::Ident(String::from("x")),
+                Token::new_ident("x"),
                 Token::Comma,
-                Token::Ident(String::from("y")),
+                Token::new_ident("y"),
                 Token::Rparen,
                 Token::Lbrace,
-                Token::Ident(String::from("x")),
+                Token::new_ident("x"),
                 Token::Plus,
-                Token::Ident(String::from("y")),
+                Token::new_ident("y"),
                 Token::Semicolon,
                 Token::Rbrace,
                 Token::Let,
-                Token::Ident(String::from("result")),
+                Token::new_ident("result"),
                 Token::Assign,
-                Token::Ident(String::from("add")),
+                Token::new_ident("add"),
                 Token::Lparen,
-                Token::Ident(String::from("five")),
+                Token::new_ident("five"),
                 Token::Comma,
-                Token::Ident(String::from("ten")),
+                Token::new_ident("ten"),
                 Token::Rparen,
                 Token::Semicolon,
                 Token::If,
@@ -198,18 +196,24 @@ mod test {
     }
 
     #[test]
-    fn trailing_space() {
+    fn trailing_whitespace() {
         assert_eq!(
             Lexer::lex(
-                " let x = 7;
+                " let x1 = 7;
+                    let x2 =8;
 
                      "
             ),
             vec![
                 Token::Let,
-                Token::Ident(String::from("x")),
+                Token::new_ident("x1"),
                 Token::Assign,
                 Token::Int(7),
+                Token::Semicolon,
+                Token::Let,
+                Token::new_ident("x2"),
+                Token::Assign,
+                Token::Int(8),
                 Token::Semicolon,
                 Token::EOF
             ]
