@@ -21,7 +21,7 @@ impl Statement {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct Block {
+pub struct Block {
     statements: Vec<Statement>,
 }
 
@@ -39,7 +39,8 @@ pub enum Expression {
     Ident(Rc<String>),
     Boolean(bool),
     If(Box<IfExpression>),
-    FunctionLiteral(Vec<Expression>, Block),
+    FunctionLiteral(Vec<Rc<String>>, Block),
+    Call(Box<Expression>, Vec<Expression>),
 }
 
 impl Expression {
@@ -97,8 +98,8 @@ pub struct InfixExpression {
 #[derive(Debug, PartialEq, Clone)]
 pub struct IfExpression {
     pub(crate) condition: Expression,
-    pub(crate) consequence: Statement,
-    pub(crate) alternative: Option<Statement>,
+    pub(crate) consequence: Block,
+    pub(crate) alternative: Option<Block>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -117,6 +118,7 @@ pub enum InfixOperator {
     Neq,
     LT,
     GT,
+    Call,
 }
 
 impl TryFrom<&Token> for PrefixOperator {
@@ -144,6 +146,7 @@ impl TryFrom<&Token> for InfixOperator {
             Token::Neq => Ok(InfixOperator::Neq),
             Token::LT => Ok(InfixOperator::LT),
             Token::GT => Ok(InfixOperator::GT),
+            Token::Lparen => Ok(InfixOperator::Call),
             _ => Err(()),
         }
     }
@@ -168,7 +171,7 @@ impl Precendence for InfixOperator {
             InfixOperator::LT | InfixOperator::GT => 2,
             InfixOperator::Plus | InfixOperator::Minus => 3,
             InfixOperator::Mul | InfixOperator::Divide => 4,
-            // Call higher than prefix
+            InfixOperator::Call => 5,
         }
     }
 }
@@ -191,13 +194,6 @@ impl fmt::Display for Statement {
             Statement::Empty => write!(f, ""),
             Statement::Block(block) => {
                 write!(f, "{block}")
-                /*
-                f.write_str("{\n")?;
-                for statement in statements {
-                    write!(f, "{statement}\n")?;
-                }
-                f.write_str("}")
-                */
             }
         }
     }
@@ -229,13 +225,21 @@ impl fmt::Display for Expression {
                 }
                 Ok(())
             }
-            Expression::FunctionLiteral(args, block) => {
-                let args = args
+            Expression::FunctionLiteral(parameters, block) => {
+                let parameters = parameters
                     .iter()
-                    .map(|arg| arg.to_string())
+                    .map(|parameter| parameter.to_string())
                     .collect::<Vec<_>>()
                     .join(",");
-                write!(f, "fn({args}){block}")
+                write!(f, "fn({parameters}){block}")
+            }
+            Expression::Call(function, arguments) => {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| argument.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                write!(f, "{function}({arguments})")
             }
         }
     }
@@ -264,6 +268,7 @@ impl fmt::Display for InfixOperator {
             InfixOperator::Neq => write!(f, "!="),
             InfixOperator::LT => write!(f, "<"),
             InfixOperator::GT => write!(f, ">"),
+            InfixOperator::Call => write!(f, "call"),
         }
     }
 }
@@ -426,9 +431,7 @@ pub mod tests {
         assert_eq!(
             Expression::If(Box::from(IfExpression {
                 condition: Expression::from(2),
-                consequence: Statement::Block(Block {
-                    statements: vec![Statement::Return(Expression::from(2))]
-                }),
+                consequence: Block::new(vec![Statement::Return(Expression::from(2))]),
                 alternative: None
             }))
             .to_string(),
@@ -437,12 +440,10 @@ pub mod tests {
         assert_eq!(
             Expression::If(Box::from(IfExpression {
                 condition: Expression::from(2),
-                consequence: Statement::Block(Block {
-                    statements: vec![Statement::Return(Expression::from(2))]
-                }),
-                alternative: Some(Statement::Block(Block {
-                    statements: vec![Statement::Expression(Expression::from(3),)]
-                })),
+                consequence: Block::new(vec![Statement::Return(Expression::from(2))]),
+                alternative: Some(Block::new(vec![
+                    Statement::Expression(Expression::from(3),)
+                ])),
             }))
             .to_string(),
             "if (2) {\nreturn 2;\n} else {\n3\n}"
@@ -454,10 +455,7 @@ pub mod tests {
                     Expression::from("x"),
                     Expression::from("y")
                 ),
-                consequence: Statement::new_block(vec![Statement::Expression(Expression::from(
-                    "x"
-                ))]),
-
+                consequence: Block::new(vec![Statement::Expression(Expression::from("x"))]),
                 alternative: None,
             }))
             .to_string(),
@@ -470,12 +468,10 @@ pub mod tests {
                     Expression::from("x"),
                     Expression::from("y")
                 ),
-                consequence: Statement::new_block(vec![Statement::Expression(Expression::from(
-                    "x"
-                ))]),
-                alternative: Some(Statement::new_block(vec![Statement::Expression(
-                    Expression::from("y")
-                )]))
+                consequence: Block::new(vec![Statement::Expression(Expression::from("x"))]),
+                alternative: Some(Block::new(vec![Statement::Expression(Expression::from(
+                    "y"
+                ))]))
             }))
             .to_string(),
             "if ((x < y)) {\nx\n} else {\ny\n}"
@@ -487,6 +483,42 @@ pub mod tests {
         assert_eq!(
             Expression::FunctionLiteral(vec![], Block::new(vec![]),).to_string(),
             "fn(){\n}"
+        );
+        assert_eq!(
+            Expression::FunctionLiteral(
+                vec![Rc::new(String::from("x")), Rc::new(String::from("y"))],
+                Block::new(vec![Statement::Expression(Expression::new_infix(
+                    InfixOperator::Plus,
+                    Expression::from("x"),
+                    Expression::from("y")
+                ))]),
+            )
+            .to_string(),
+            "fn(x,y){\n(x + y)\n}"
+        );
+    }
+
+    #[test]
+    fn display_call_expression() {
+        assert_eq!(
+            Expression::Call(
+                Box::from(Expression::from("add")),
+                vec![
+                    Expression::from(1),
+                    Expression::new_infix(
+                        InfixOperator::Mul,
+                        Expression::from(2),
+                        Expression::from(3)
+                    ),
+                    Expression::new_infix(
+                        InfixOperator::Plus,
+                        Expression::from(4),
+                        Expression::from(5)
+                    ),
+                ]
+            )
+            .to_string(),
+            "add(1,(2 * 3),(4 + 5))"
         );
     }
 }
