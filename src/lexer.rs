@@ -35,7 +35,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn get_int(&mut self, first_c: char) -> Token {
-        let n: u64 = iter::once(first_c)
+        let n: i64 = iter::once(first_c)
             .chain(iter::from_fn(|| {
                 self.input.by_ref().next_if(|c| c.is_ascii_digit())
             }))

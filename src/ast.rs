@@ -2,6 +2,8 @@ use crate::token::Token;
 use std::fmt;
 use std::rc::Rc;
 
+pub type Program = Vec<Statement>;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Let {
@@ -22,12 +24,14 @@ impl Statement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
-    statements: Vec<Statement>,
+    pub statements: Vec<Statement>,
 }
 
 impl Block {
-    pub fn new(statements: Vec<Statement>) -> Self {
-        Block { statements }
+    pub fn new(statements: impl Into<Vec<Statement>>) -> Self {
+        Block {
+            statements: statements.into(),
+        }
     }
 }
 
@@ -35,7 +39,7 @@ impl Block {
 pub enum Expression {
     Infix(InfixExpression),
     Prefix(PrefixExpression),
-    IntegerLiteral(u64),
+    IntegerLiteral(i64),
     Ident(Rc<String>),
     Boolean(bool),
     If(Box<IfExpression>),
@@ -44,23 +48,42 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn new_prefix(operator: PrefixOperator, operand: Self) -> Self {
+    pub fn new_prefix(operator: PrefixOperator, operand: impl Into<Self>) -> Self {
         Self::Prefix(PrefixExpression {
             operator,
-            operand: Box::from(operand),
+            operand: Box::from(operand.into()),
         })
     }
 
-    pub fn new_infix(operator: InfixOperator, lhs: Self, rhs: Self) -> Self {
+    pub fn new_infix(operator: InfixOperator, lhs: impl Into<Self>, rhs: impl Into<Self>) -> Self {
         Self::Infix(InfixExpression {
             operator,
-            operands: Box::from((lhs, rhs)),
+            operands: Box::from((lhs.into(), rhs.into())),
         })
+    }
+    pub fn new_if_else(
+        condition: impl Into<Expression>,
+        consequence: Block,
+        alternative: Block,
+    ) -> Self {
+        Self::If(Box::from(IfExpression {
+            condition: condition.into(),
+            consequence,
+            alternative: Some(alternative),
+        }))
+    }
+
+    pub fn new_if(condition: impl Into<Expression>, consequence: Block) -> Self {
+        Self::If(Box::from(IfExpression {
+            condition: condition.into(),
+            consequence,
+            alternative: None,
+        }))
     }
 }
 
-impl From<u64> for Expression {
-    fn from(value: u64) -> Self {
+impl From<i64> for Expression {
+    fn from(value: i64) -> Self {
         Expression::IntegerLiteral(value)
     }
 }
@@ -68,6 +91,12 @@ impl From<u64> for Expression {
 impl From<&str> for Expression {
     fn from(value: &str) -> Self {
         Expression::Ident(Rc::new(String::from(value)))
+    }
+}
+
+impl From<bool> for Expression {
+    fn from(value: bool) -> Self {
+        Expression::Boolean(value)
     }
 }
 

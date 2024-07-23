@@ -20,7 +20,7 @@ pub enum Token {
     EOF,
     Let,
     Ident(Rc<String>),
-    Int(u64),
+    Int(i64),
     Function,
     Eq,
     Neq,

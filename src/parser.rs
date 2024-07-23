@@ -1,7 +1,8 @@
 use crate::ast::{
-    Block, Expression, IfExpression, InfixOperator, Precendence, PrefixOperator, Statement,
-    LOWEST_PRECEDENCE,
+    Block, Expression, IfExpression, InfixOperator, Precendence, PrefixOperator, Program,
+    Statement, LOWEST_PRECEDENCE,
 };
+use crate::error::MonkeyError;
 use crate::lexer::Lexer;
 use crate::token::Token;
 use std::rc::Rc;
@@ -29,12 +30,12 @@ impl<'a> Parser<'a> {
         self.next_token = self.lexer.next();
     }
 
-    pub fn parse_program(input: &'a str) -> Vec<Result<Statement, String>> {
+    pub fn parse_program(input: &'a str) -> Result<Program, MonkeyError> {
         // TODO: format output Result<Vec<Statement>, String>
-        Self::new(input).collect()
+        todo!()
     }
 
-    fn parse_let_statement(&mut self) -> Result<Statement, String> {
+    fn parse_let_statement(&mut self) -> Result<Statement, MonkeyError> {
         self.expect_peek(Token::new_ident(""))?;
         let ident = self.parse_identifier()?;
         self.expect_peek(Token::Assign)?;
@@ -48,7 +49,7 @@ impl<'a> Parser<'a> {
         Ok(Statement::Let { ident, expression })
     }
 
-    fn parse_return_statement(&mut self) -> Result<Statement, String> {
+    fn parse_return_statement(&mut self) -> Result<Statement, MonkeyError> {
         self.next_token();
         let expression = self.parse_expression(LOWEST_PRECEDENCE)?;
         if let Some(next_token) = self.next_token.as_ref() {
@@ -59,7 +60,7 @@ impl<'a> Parser<'a> {
         Ok(Statement::Return(expression))
     }
 
-    fn parse_expression_statement(&mut self) -> Result<Statement, String> {
+    fn parse_expression_statement(&mut self) -> Result<Statement, MonkeyError> {
         let expression = self.parse_expression(LOWEST_PRECEDENCE)?;
         if let Some(next_token) = self.next_token.as_ref() {
             if next_token.is_same_variant(Token::Semicolon) {
@@ -69,7 +70,7 @@ impl<'a> Parser<'a> {
         Ok(Statement::Expression(expression))
     }
 
-    fn parse_expression(&mut self, precedence: u8) -> Result<Expression, String> {
+    fn parse_expression(&mut self, precedence: u8) -> Result<Expression, MonkeyError> {
         let mut lhs = self.parse_prefix_expression()?;
 
         while self.next_token.as_ref().map_or(false, |next_token| {
@@ -97,7 +98,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_prefix_expression(&mut self) -> Result<Expression, String> {
+    fn parse_prefix_expression(&mut self) -> Result<Expression, MonkeyError> {
         match &self.current_token {
             Some(Token::Int(_)) => Ok(Expression::from(self.parse_integer_literal()?)),
             Some(Token::Ident(_)) => Ok(Expression::Ident(self.parse_identifier()?)),
@@ -115,21 +116,23 @@ impl<'a> Parser<'a> {
             Some(Token::Lparen) => self.parse_grouped_expression(),
             Some(Token::If) => self.parse_if_expression(),
             Some(Token::Function) => self.parse_function_literal(),
-            Some(ref token) => Err(format!(
+            Some(ref token) => Err(MonkeyError::Parse(format!(
                 "Unable to parse prefix expression starting with {token}"
+            ))),
+            None => Err(MonkeyError::Parse(
+                "Unable to parse prefix expression expected token but got none".into(),
             )),
-            None => Err("Unable to parse prefix expression expected token but got none".into()),
         }
     }
 
-    fn parse_grouped_expression(&mut self) -> Result<Expression, String> {
+    fn parse_grouped_expression(&mut self) -> Result<Expression, MonkeyError> {
         self.next_token();
         let expression = self.parse_expression(LOWEST_PRECEDENCE)?;
         self.expect_peek(Token::Rparen)?;
         Ok(expression)
     }
 
-    fn parse_if_expression(&mut self) -> Result<Expression, String> {
+    fn parse_if_expression(&mut self) -> Result<Expression, MonkeyError> {
         self.expect_peek(Token::Lparen)?;
         self.next_token();
         let condition = self.parse_expression(LOWEST_PRECEDENCE)?;
@@ -155,7 +158,7 @@ impl<'a> Parser<'a> {
         })))
     }
 
-    fn parse_block_statement(&mut self) -> Result<Block, String> {
+    fn parse_block_statement(&mut self) -> Result<Block, MonkeyError> {
         let mut statements: Vec<Statement> = Vec::new();
         self.next_token();
         while self.current_token.as_ref().map_or(false, |current_token| {
@@ -176,9 +179,11 @@ impl<'a> Parser<'a> {
         Ok(Block::new(statements))
     }
 
-    fn parse_infix_expression(&mut self, lhs: Expression) -> Result<Expression, String> {
+    fn parse_infix_expression(&mut self, lhs: Expression) -> Result<Expression, MonkeyError> {
         let Some(current_token) = self.current_token.as_ref() else {
-            return Err("Unable to parse prefix expression expected token but got none".into());
+            return Err(MonkeyError::Parse(
+                "Unable to parse prefix expression expected token but got none".into(),
+            ));
         };
         let operator = match current_token {
             Token::Plus
@@ -191,13 +196,15 @@ impl<'a> Parser<'a> {
             | Token::Lparen
             | Token::GT => InfixOperator::try_from(current_token),
             _ => {
-                return Err(format!(
+                return Err(MonkeyError::Parse(format!(
                     "Unable to parse infix expression starting with {current_token}"
-                ));
+                )));
             }
         };
         let Ok(operator) = operator else {
-            return Err(format!("Expected infix operator found {current_token}"));
+            return Err(MonkeyError::Parse(format!(
+                "Expected infix operator found {current_token}"
+            )));
         };
         let precendence = self.current_precedence();
         self.next_token();
@@ -209,7 +216,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::new_infix(operator, lhs, rhs))
     }
 
-    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, String> {
+    fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, MonkeyError> {
         let mut args = vec![];
         if self
             .current_token
@@ -234,23 +241,23 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    fn parse_identifier(&self) -> Result<Rc<String>, String> {
+    fn parse_identifier(&self) -> Result<Rc<String>, MonkeyError> {
         if let Some(Token::Ident(ident)) = self.current_token.as_ref() {
             Ok(ident.clone())
         } else {
-            Err("Failed to parse identifier".into())
+            Err(MonkeyError::Parse("Failed to parse identifier".into()))
         }
     }
 
-    fn parse_integer_literal(&self) -> Result<u64, String> {
+    fn parse_integer_literal(&self) -> Result<i64, MonkeyError> {
         if let Some(Token::Int(n)) = self.current_token.as_ref() {
             Ok(*n)
         } else {
-            Err("Failed to parse integer literal".into())
+            Err(MonkeyError::Parse("Failed to parse integer literal".into()))
         }
     }
 
-    fn parse_function_literal(&mut self) -> Result<Expression, String> {
+    fn parse_function_literal(&mut self) -> Result<Expression, MonkeyError> {
         self.expect_peek(Token::Lparen)?;
         let parameters = self.parse_function_parameters()?;
 
@@ -260,7 +267,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::FunctionLiteral(parameters, block))
     }
 
-    fn parse_function_parameters(&mut self) -> Result<Vec<Rc<String>>, String> {
+    fn parse_function_parameters(&mut self) -> Result<Vec<Rc<String>>, MonkeyError> {
         let mut identifiers = vec![];
         if self
             .next_token
@@ -272,7 +279,9 @@ impl<'a> Parser<'a> {
         }
         self.next_token();
         let Some(Token::Ident(ident)) = self.current_token.as_ref() else {
-            return Err("Expected identity in function params".into());
+            return Err(MonkeyError::Parse(
+                "Expected identity in function params".into(),
+            ));
         };
         identifiers.push(ident.clone());
 
@@ -284,7 +293,9 @@ impl<'a> Parser<'a> {
             self.next_token();
             self.next_token();
             let Some(Token::Ident(ident)) = self.current_token.as_ref() else {
-                return Err("Expected identity in function params".into());
+                return Err(MonkeyError::Parse(
+                    "Expected identity in function params".into(),
+                ));
             };
             identifiers.push(ident.clone());
         }
@@ -294,14 +305,16 @@ impl<'a> Parser<'a> {
         Ok(identifiers)
     }
 
-    fn expect_peek(&mut self, token: Token) -> Result<(), String> {
+    fn expect_peek(&mut self, token: Token) -> Result<(), MonkeyError> {
         match self.next_token.as_ref() {
             Some(next_token) if next_token.is_same_variant(&token) => {
                 self.next_token();
                 Ok(())
             }
-            Some(next_token) => Err(format!("Expected {token} got {next_token}",)),
-            None => Err(format!("Expected {token} got none")),
+            Some(next_token) => Err(MonkeyError::Parse(format!(
+                "Expected {token} got {next_token}",
+            ))),
+            None => Err(MonkeyError::Parse(format!("Expected {token} got none"))),
         }
     }
 
@@ -329,7 +342,7 @@ impl<'a> Parser<'a> {
         LOWEST_PRECEDENCE
     }
 
-    fn parse_statement(&mut self) -> Option<Result<Statement, String>> {
+    fn parse_statement(&mut self) -> Option<Result<Statement, MonkeyError>> {
         let statement = match self.current_token.as_ref()? {
             Token::Let => Some(self.parse_let_statement()),
             Token::Return => Some(self.parse_return_statement()),
@@ -342,7 +355,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Iterator for Parser<'a> {
-    type Item = Result<Statement, String>;
+    type Item = Result<Statement, MonkeyError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.parse_statement()
@@ -365,7 +378,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec!["let x = 5;", "let y = 10;", "let foobar = 838383;",]
@@ -384,7 +397,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec!["return 5;", "return 10;", "return 939393;",]
@@ -404,7 +417,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec!["(-5)", "(!foobar)", "(!true)", "(!false)"]
@@ -431,7 +444,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec![
@@ -482,7 +495,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec![
@@ -527,7 +540,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec![
@@ -549,7 +562,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec!["fn(){\n}", "fn(x){\n}", "fn(x,y,z){\n}",]
@@ -567,7 +580,7 @@ mod test {
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),
-                Err(e) => panic!("Parsing error: {e}"),
+                Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
             vec!["foo()", "add(2,3)"]
