@@ -361,7 +361,7 @@ mod test {
                 let x = 5;
                 let y = 10;
                 let foobar = 838383;
-            ",
+                ",
             )
             .filter_map(|r| match r {
                 Ok(s) => Some(s.to_string()),

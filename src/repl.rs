@@ -1,4 +1,4 @@
-use crate::lexer::Lexer;
+use crate::parser::Parser;
 use std::io;
 
 const PROMPT: &[u8] = b">>";
@@ -13,7 +13,7 @@ where
         writer.write(PROMPT).unwrap();
         writer.flush().unwrap();
         reader.read_line(&mut buffer).unwrap();
-        let tokens: Vec<_> = Lexer::new(buffer.as_str()).collect();
-        write!(writer, "{:?}\n", tokens).unwrap();
+        let statements: Vec<_> = Parser::new(buffer.as_str()).collect();
+        write!(writer, "{:?}\n", statements).unwrap();
     }
 }
