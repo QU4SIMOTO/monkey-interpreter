@@ -13,7 +13,6 @@ pub enum Statement {
     Return(Expression),
     Expression(Expression),
     Block(Block),
-    Empty,
 }
 
 impl Statement {
@@ -220,7 +219,6 @@ impl fmt::Display for Statement {
             Statement::Let { ident, expression } => write!(f, "let {ident} = {expression};"),
             Statement::Return(expression) => write!(f, "return {expression};"),
             Statement::Expression(expression) => write!(f, "{expression}"),
-            Statement::Empty => write!(f, ""),
             Statement::Block(block) => {
                 write!(f, "{block}")
             }
