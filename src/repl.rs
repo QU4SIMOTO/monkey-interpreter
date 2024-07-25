@@ -1,3 +1,5 @@
+use crate::evaluator::Evaluatable;
+use crate::object::{environment::Environment, object::NULL};
 use crate::parser::Parser;
 use std::io;
 
@@ -8,12 +10,22 @@ where
     R: io::BufRead,
     W: io::Write,
 {
+    let mut env = Environment::new();
     loop {
         let mut buffer = String::new();
         writer.write(PROMPT).unwrap();
         writer.flush().unwrap();
         reader.read_line(&mut buffer).unwrap();
-        let statements: Vec<_> = Parser::new(buffer.as_str()).collect();
-        write!(writer, "{:?}\n", statements).unwrap();
+        // TODO: handle errors
+        let statements: Vec<_> = Parser::new(buffer.as_str())
+            .filter_map(|s| match s {
+                Ok(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        let res = statements.evaluate(&mut env);
+        if *res != NULL {
+            write!(writer, "{res}\n",).unwrap();
+        }
     }
 }
