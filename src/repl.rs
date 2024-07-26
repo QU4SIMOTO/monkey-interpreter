@@ -24,7 +24,7 @@ where
             })
             .collect();
         let res = statements.evaluate(&mut env);
-        if *res != NULL {
+        if res != NULL.into() {
             write!(writer, "{res}\n",).unwrap();
         }
     }

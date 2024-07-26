@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Environment {
-    store: HashMap<Rc<String>, Object>,
+    store: HashMap<Rc<String>, Rc<Object>>,
 }
 
 impl Environment {
@@ -14,11 +14,11 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, name: &Rc<String>) -> Option<&Object> {
-        self.store.get(name)
+    pub fn get(&self, name: Rc<String>) -> Option<&Rc<Object>> {
+        self.store.get(name.as_ref())
     }
 
-    pub fn set(&mut self, name: &Rc<String>, val: Object) {
+    pub fn set(&mut self, name: &Rc<String>, val: Rc<Object>) {
         self.store.insert(name.clone(), val);
     }
 }

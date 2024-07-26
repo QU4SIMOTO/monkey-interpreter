@@ -6,21 +6,9 @@ use crate::object::{
     environment::Environment,
     object::{Object, FALSE, NULL, TRUE},
 };
-use std::borrow::Cow;
+use std::rc::Rc;
 
-pub type Evaluation<'a> = Cow<'a, Object>;
-
-impl From<Object> for Evaluation<'_> {
-    fn from(value: Object) -> Self {
-        Cow::Owned(value)
-    }
-}
-
-impl<'a> From<&'a Object> for Evaluation<'a> {
-    fn from(value: &'a Object) -> Self {
-        Cow::Borrowed(value)
-    }
-}
+pub type Evaluation = Rc<Object>;
 
 pub trait Evaluatable<'a> {
     fn evaluate(&self, env: &'a mut Environment) -> Evaluation;
@@ -30,15 +18,14 @@ impl Evaluatable<'_> for Expression {
     fn evaluate(&self, env: &mut Environment) -> Evaluation {
         match self {
             Expression::IntegerLiteral(n) => Evaluation::from(Object::from(*n)),
-            Expression::Boolean(true) => Evaluation::from(&TRUE),
-            Expression::Boolean(false) => Evaluation::from(&FALSE),
+            Expression::Boolean(true) => TRUE.into(),
+            Expression::Boolean(false) => FALSE.into(),
             Expression::Prefix(e) => e.evaluate(env),
             Expression::Infix(e) => e.evaluate(env),
             Expression::If(e) => e.evaluate(env),
             Expression::Ident(i) => {
-                // todo: fix this, shouldn't have to clone
-                if let Some(v) = env.get(i) {
-                    Cow::Owned(v.clone())
+                if let Some(v) = env.get(i.clone()) {
+                    v.clone()
                 } else {
                     Evaluation::from(Object::unknown_ident(i))
                 }
@@ -55,10 +42,8 @@ impl Evaluatable<'_> for PrefixExpression {
         let rhs = self.operand.evaluate(env);
         match self.operator {
             PrefixOperator::Not => match *rhs {
-                Object::Boolean { value: false, .. } | Object::Null { .. } => {
-                    Evaluation::from(&TRUE)
-                }
-                _ => Evaluation::from(&FALSE),
+                Object::Boolean { value: false, .. } | Object::Null { .. } => TRUE.into(),
+                _ => FALSE.into(),
             },
             PrefixOperator::Minus => match *rhs {
                 Object::Integer { value: n, .. } => Evaluation::from(Object::from(n * -1)),
@@ -80,14 +65,14 @@ impl Evaluatable<'_> for InfixExpression {
                     InfixOperator::Minus => Evaluation::from(Object::from(x - y)),
                     InfixOperator::Mul => Evaluation::from(Object::from(x * y)),
                     InfixOperator::Divide => Evaluation::from(Object::from(x / y)),
-                    InfixOperator::LT if x < y => Evaluation::from(&TRUE),
-                    InfixOperator::LT => Evaluation::from(&FALSE),
-                    InfixOperator::GT if x > y => Evaluation::from(&TRUE),
-                    InfixOperator::GT => Evaluation::from(&FALSE),
-                    InfixOperator::Eq if x == y => Evaluation::from(&TRUE),
-                    InfixOperator::Eq => Evaluation::from(&FALSE),
-                    InfixOperator::Neq if x != y => Evaluation::from(&TRUE),
-                    InfixOperator::Neq => Evaluation::from(&FALSE),
+                    InfixOperator::LT if x < y => TRUE.into(),
+                    InfixOperator::LT => FALSE.into(),
+                    InfixOperator::GT if x > y => TRUE.into(),
+                    InfixOperator::GT => FALSE.into(),
+                    InfixOperator::Eq if x == y => TRUE.into(),
+                    InfixOperator::Eq => FALSE.into(),
+                    InfixOperator::Neq if x != y => TRUE.into(),
+                    InfixOperator::Neq => FALSE.into(),
                     _ => Evaluation::from(Object::unknown_infix_operator(
                         lhs.as_ref(),
                         rhs.as_ref(),
@@ -97,10 +82,10 @@ impl Evaluatable<'_> for InfixExpression {
             }
             (Object::Boolean { value: a, .. }, Object::Boolean { value: b, .. }) => {
                 match self.operator {
-                    InfixOperator::Eq if a == b => Evaluation::from(&TRUE),
-                    InfixOperator::Eq => Evaluation::from(&FALSE),
-                    InfixOperator::Neq if a != b => Evaluation::from(&TRUE),
-                    InfixOperator::Neq => Evaluation::from(&FALSE),
+                    InfixOperator::Eq if a == b => TRUE.into(),
+                    InfixOperator::Eq => FALSE.into(),
+                    InfixOperator::Neq if a != b => TRUE.into(),
+                    InfixOperator::Neq => FALSE.into(),
                     _ => Evaluation::from(Object::unknown_infix_operator(
                         lhs.as_ref(),
                         rhs.as_ref(),
@@ -125,7 +110,7 @@ impl Evaluatable<'_> for IfExpression {
             {
                 self.alternative.as_ref().unwrap().evaluate(env)
             }
-            Object::Null { .. } | Object::Boolean { value: false, .. } => Evaluation::from(&NULL),
+            Object::Null { .. } | Object::Boolean { value: false, .. } => NULL.into(),
             _ => self.consequence.evaluate(env),
         }
     }
@@ -135,15 +120,15 @@ impl Evaluatable<'_> for Statement {
     fn evaluate(&self, env: &mut Environment) -> Evaluation {
         match self {
             Statement::Expression(e) => e.evaluate(env),
-            Statement::Return(e) => Cow::Owned(e.evaluate(env).return_from()),
+            Statement::Return(e) => Rc::new(e.evaluate(env).return_from()),
             Statement::Block(block) => block.evaluate(env),
             Statement::Let { ident, expression } => {
                 let val = expression.evaluate(env);
                 if val.is_error() {
                     return val;
                 }
-                env.set(ident, val.into_owned());
-                Evaluation::from(&NULL)
+                env.set(ident, val);
+                NULL.into()
             }
         }
     }
@@ -151,7 +136,7 @@ impl Evaluatable<'_> for Statement {
 
 impl Evaluatable<'_> for Block {
     fn evaluate(&self, env: &mut Environment) -> Evaluation {
-        let mut result = Evaluation::from(&NULL);
+        let mut result = NULL.into();
         for statement in self.statements.iter() {
             result = statement.evaluate(env);
             if result.is_return() || result.is_error() {
@@ -164,14 +149,14 @@ impl Evaluatable<'_> for Block {
 
 impl Evaluatable<'_> for Program {
     fn evaluate(&self, env: &mut Environment) -> Evaluation {
-        let mut result = Evaluation::from(&NULL);
+        let mut result = NULL.into();
         for statement in self.iter() {
             result = statement.evaluate(env);
             if result.is_error() {
                 return result;
             }
             if result.is_return() {
-                return Cow::Owned(result.eval_from());
+                return Rc::new(result.eval_from());
             }
         }
         result
@@ -230,131 +215,129 @@ mod test {
             Object::from(false)
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::LT, 1, 2).evaluate(&mut Environment::new()),
-            TRUE
+            Expression::new_infix(InfixOperator::LT, 1, 2).evaluate(&mut Environment::new()),
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::GT, 1, 2).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::GT, 1, 2).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::LT, 1, 1).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::LT, 1, 1).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::GT, 1, 1).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::GT, 1, 1).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Eq, 1, 1).evaluate(&mut Environment::new()),
-            TRUE
+            Expression::new_infix(InfixOperator::Eq, 1, 1).evaluate(&mut Environment::new()),
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Neq, 1, 1).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::Neq, 1, 1).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Eq, 1, 2).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::Eq, 1, 2).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Neq, 1, 2).evaluate(&mut Environment::new()),
-            TRUE
+            Expression::new_infix(InfixOperator::Neq, 1, 2).evaluate(&mut Environment::new()),
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Eq, true, true).evaluate(&mut Environment::new()),
-            TRUE
+            Expression::new_infix(InfixOperator::Eq, true, true).evaluate(&mut Environment::new()),
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Eq, false, false)
+            Expression::new_infix(InfixOperator::Eq, false, false)
                 .evaluate(&mut Environment::new()),
-            TRUE
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Eq, true, false)
-                .evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::Eq, true, false).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Eq, false, true)
-                .evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_infix(InfixOperator::Eq, false, true).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(
+            Expression::new_infix(
                 InfixOperator::Eq,
                 Expression::new_infix(InfixOperator::LT, 1, 2),
                 true
             )
             .evaluate(&mut Environment::new()),
-            TRUE
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_infix(
+            Expression::new_infix(
                 InfixOperator::Eq,
                 Expression::new_infix(InfixOperator::LT, 1, 2),
                 Expression::from(false)
             )
             .evaluate(&mut Environment::new()),
-            FALSE
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(
+            Expression::new_infix(
                 InfixOperator::Eq,
                 Expression::new_infix(InfixOperator::GT, 1, 2),
                 Expression::from(true)
             )
             .evaluate(&mut Environment::new()),
-            FALSE
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_infix(
+            Expression::new_infix(
                 InfixOperator::Eq,
                 Expression::new_infix(InfixOperator::GT, 1, 2),
                 Expression::from(false)
             )
             .evaluate(&mut Environment::new()),
-            TRUE
+            TRUE.into()
         );
     }
 
     #[test]
     fn not_operator() {
         assert_eq!(
-            *Expression::new_prefix(PrefixOperator::Not, true).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_prefix(PrefixOperator::Not, true).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_prefix(PrefixOperator::Not, false).evaluate(&mut Environment::new()),
-            TRUE
+            Expression::new_prefix(PrefixOperator::Not, false).evaluate(&mut Environment::new()),
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_prefix(PrefixOperator::Not, 5).evaluate(&mut Environment::new()),
-            FALSE
+            Expression::new_prefix(PrefixOperator::Not, 5).evaluate(&mut Environment::new()),
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_prefix(
+            Expression::new_prefix(
                 PrefixOperator::Not,
                 Expression::new_prefix(PrefixOperator::Not, true)
             )
             .evaluate(&mut Environment::new()),
-            TRUE
+            TRUE.into()
         );
         assert_eq!(
-            *Expression::new_prefix(
+            Expression::new_prefix(
                 PrefixOperator::Not,
                 Expression::new_prefix(PrefixOperator::Not, false)
             )
             .evaluate(&mut Environment::new()),
-            FALSE
+            FALSE.into()
         );
         assert_eq!(
-            *Expression::new_prefix(
+            Expression::new_prefix(
                 PrefixOperator::Not,
                 Expression::new_prefix(PrefixOperator::Not, 5)
             )
             .evaluate(&mut Environment::new()),
-            TRUE
+            TRUE.into()
         );
     }
 
@@ -374,7 +357,7 @@ mod test {
                 Block::new([Statement::Expression(Expression::from(10))]),
             )
             .evaluate(&mut Environment::new()),
-            NULL
+            NULL.into()
         );
         assert_eq!(
             *Expression::new_if(
@@ -398,7 +381,7 @@ mod test {
                 Block::new([Statement::Expression(Expression::from(10))]),
             )
             .evaluate(&mut Environment::new()),
-            NULL
+            NULL.into()
         );
         assert_eq!(
             *Expression::new_if_else(
