@@ -97,6 +97,7 @@ impl<'a> Parser<'a> {
         match &self.current_token {
             Some(Token::Int(_)) => Ok(Expression::from(self.parse_integer_literal()?)),
             Some(Token::Ident(_)) => Ok(Expression::Ident(self.parse_identifier()?)),
+            Some(Token::String(_)) => Ok(self.parse_string_literal()?),
             Some(Token::Exclam) | Some(Token::Minus) => {
                 let operator: PrefixOperator =
                     PrefixOperator::try_from(self.current_token.as_ref().unwrap()).unwrap();
@@ -236,7 +237,7 @@ impl<'a> Parser<'a> {
         let parameters = self.parse_function_parameters()?;
 
         self.expect_peek(Token::Lbrace)?;
-        // todo: fix this
+        // TODO: fix this
         let block = self.parse_block_statement()?;
         Ok(Expression::FunctionLiteral(parameters, block))
     }
@@ -277,6 +278,14 @@ impl<'a> Parser<'a> {
         self.expect_peek(Token::Rparen)?;
 
         Ok(identifiers)
+    }
+
+    fn parse_string_literal(&mut self) -> Result<Expression, MonkeyError> {
+        if let Some(Token::String(s)) = self.current_token.as_ref() {
+            Ok(Expression::StringLiteral(s.clone()))
+        } else {
+            Err(MonkeyError::Parse("Failed to parse identifier".into()))
+        }
     }
 
     fn expect_peek(&mut self, token: Token) -> Result<(), MonkeyError> {

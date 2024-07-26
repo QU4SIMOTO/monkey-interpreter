@@ -44,6 +44,16 @@ impl<'a> Lexer<'a> {
             .expect("Failed to parse int");
         Token::Int(n)
     }
+
+    fn get_string(&mut self) -> Token {
+        let s = Token::String(
+            iter::from_fn(|| self.input.by_ref().next_if(|&c| c != '"'))
+                .collect::<String>()
+                .into(),
+        );
+        self.input.next();
+        s
+    }
 }
 
 impl Iterator for Lexer<'_> {
@@ -61,6 +71,7 @@ impl Iterator for Lexer<'_> {
         let token = match c {
             'a'..='z' | 'A'..='Z' => self.get_ident(c),
             '0'..='9' => self.get_int(c),
+            '"' => self.get_string(),
             '=' if self.input.next_if(|&c| c == '=').is_some() => Token::Eq,
             '=' => Token::Assign,
             '!' if self.input.next_if(|&c| c == '=').is_some() => Token::Neq,
@@ -127,7 +138,9 @@ mod test {
                 return false;
             }
             10 == 10;
-            10 != 9;"
+            10 != 9;
+            \"foobar\"
+            \"foo bar\""
             ),
             vec![
                 Token::Let,
@@ -190,6 +203,8 @@ mod test {
                 Token::Neq,
                 Token::Int(9),
                 Token::Semicolon,
+                Token::new_string("foobar"),
+                Token::new_string("foo bar"),
                 Token::EOF,
             ]
         )

@@ -44,6 +44,7 @@ pub enum Expression {
     If(Box<IfExpression>),
     FunctionLiteral(Vec<Rc<String>>, Block),
     Call(Box<Expression>, Vec<Expression>),
+    StringLiteral(Rc<String>),
 }
 
 impl Expression {
@@ -268,6 +269,7 @@ impl fmt::Display for Expression {
                     .join(",");
                 write!(f, "{function}({arguments})")
             }
+            Expression::StringLiteral(s) => write!(f, "\"{s}\""),
         }
     }
 }
@@ -547,5 +549,13 @@ pub mod tests {
             .to_string(),
             "add(1,(2 * 3),(4 + 5))"
         );
+    }
+
+    #[test]
+    fn display_string_literal() {
+        assert_eq!(
+            Expression::StringLiteral(Rc::new("foo".into())).to_string(),
+            "\"foo\""
+        )
     }
 }

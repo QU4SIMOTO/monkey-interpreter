@@ -19,6 +19,10 @@ pub enum Object {
         value: bool,
         context: ObjectContext,
     },
+    String {
+        value: Rc<String>,
+        context: ObjectContext,
+    },
     Null {
         context: ObjectContext,
     },
@@ -56,6 +60,10 @@ impl Object {
         match *self {
             Self::Boolean { value, .. } => Self::Boolean { value, context },
             Self::Integer { value, .. } => Self::Integer { value, context },
+            Self::String { ref value, .. } => Self::String {
+                value: value.clone(),
+                context,
+            },
             Self::Null { .. } => Self::Null { context },
             Self::Error { .. } => self.clone(),
             Self::Function {
@@ -87,6 +95,7 @@ impl Object {
             Self::Null { .. } => "NULL",
             Self::Error { .. } => "ERROR",
             Self::Function { .. } => "FUNCTION",
+            Self::String { .. } => "STRING",
         }
     }
 
@@ -126,6 +135,7 @@ impl fmt::Display for Object {
         match self {
             Self::Integer { value, .. } => write!(f, "{value}"),
             Self::Boolean { value, .. } => write!(f, "{value}"),
+            Self::String { value, .. } => write!(f, "{value}"),
             Self::Null { .. } => write!(f, "null"),
             Self::Error(value) => write!(f, "ERROR: {value}"),
             Self::Function {

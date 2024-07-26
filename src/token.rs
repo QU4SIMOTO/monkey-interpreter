@@ -29,39 +29,41 @@ pub enum Token {
     If,
     Else,
     Return,
+    String(Rc<String>),
     Illegal,
 }
 
 impl AsRef<str> for Token {
     fn as_ref(&self) -> &str {
         match self {
-            Token::Eq => "==",
-            Token::Neq => "!=",
-            Token::Assign => "=",
-            Token::Asterisk => "*",
-            Token::Slash => "/",
-            Token::Exclam => "!",
-            Token::Plus => "+",
-            Token::Minus => "-",
-            Token::LT => "<",
-            Token::GT => ">",
-            Token::Lparen => "(",
-            Token::Rparen => ")",
-            Token::Lbrace => "{",
-            Token::Rbrace => "}",
-            Token::Comma => ",",
-            Token::Semicolon => ";",
-            Token::Let => "let",
-            Token::Function => "fn",
-            Token::True => "true",
-            Token::False => "false",
-            Token::If => "if",
-            Token::Else => "else",
-            Token::Return => "return",
-            Token::Ident(_) => "ident",
-            Token::Int(_) => "int",
-            Token::EOF => "EOF",
-            Token::Illegal => "0",
+            Self::Eq => "==",
+            Self::Neq => "!=",
+            Self::Assign => "=",
+            Self::Asterisk => "*",
+            Self::Slash => "/",
+            Self::Exclam => "!",
+            Self::Plus => "+",
+            Self::Minus => "-",
+            Self::LT => "<",
+            Self::GT => ">",
+            Self::Lparen => "(",
+            Self::Rparen => ")",
+            Self::Lbrace => "{",
+            Self::Rbrace => "}",
+            Self::Comma => ",",
+            Self::Semicolon => ";",
+            Self::Let => "let",
+            Self::Function => "fn",
+            Self::True => "true",
+            Self::False => "false",
+            Self::If => "if",
+            Self::Else => "else",
+            Self::Return => "return",
+            Self::Ident(_) => "ident",
+            Self::Int(_) => "int",
+            Self::EOF => "EOF",
+            Self::String(_) => "string",
+            Self::Illegal => "0",
         }
     }
 }
@@ -96,5 +98,9 @@ impl Token {
 
     pub(crate) fn new_ident(ident: impl Into<String>) -> Self {
         Self::Ident(Rc::new(ident.into()))
+    }
+
+    pub(crate) fn new_string(ident: impl Into<String>) -> Self {
+        Self::String(Rc::new(ident.into()))
     }
 }

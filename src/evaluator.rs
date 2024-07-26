@@ -17,6 +17,7 @@ pub trait Evaluatable<'a> {
 
 impl<'a> Evaluatable<'a> for &str {
     fn evaluate(&self, env: &'a mut Environment) -> Evaluation {
+        // TODO: handle errors better
         let p = Parser::new(self)
             .filter_map(|s| match s {
                 Ok(s) => Some(s),
@@ -43,6 +44,10 @@ impl Evaluatable<'_> for Expression {
                     Evaluation::from(Object::unknown_ident(i))
                 }
             }
+            Expression::StringLiteral(s) => Evaluation::from(Object::String {
+                value: s.clone(),
+                context: ObjectContext::Eval,
+            }),
             Expression::FunctionLiteral(parameters, block) => Object::Function {
                 // TODO: maybe consume self to avoid clone
                 parameters: parameters.clone(),
@@ -63,7 +68,7 @@ impl Evaluatable<'_> for Expression {
                     return Object::error_from("expected function").into();
                 };
                 let args = args.iter().map(|arg| arg.evaluate(env));
-                // todo: handle errors when evaluating args
+                // TODO: handle errors when evaluating args
                 let mut env = Environment::new_enclosed(f_env.clone());
                 for (i, arg) in args.enumerate() {
                     env.set(parameters.get(i).unwrap(), arg);
@@ -126,6 +131,22 @@ impl Evaluatable<'_> for InfixExpression {
                     InfixOperator::Eq => FALSE.into(),
                     InfixOperator::Neq if a != b => TRUE.into(),
                     InfixOperator::Neq => FALSE.into(),
+                    _ => Evaluation::from(Object::unknown_infix_operator(
+                        lhs.as_ref(),
+                        rhs.as_ref(),
+                        self.operator,
+                    )),
+                }
+            }
+            (Object::String { value: a, .. }, Object::String { value: b, .. }) => {
+                match self.operator {
+                    InfixOperator::Plus => {
+                        let value = String::from(a.as_str()) + b;
+                        Evaluation::from(Object::String {
+                            context: ObjectContext::Eval,
+                            value: Rc::new(value),
+                        })
+                    }
                     _ => Evaluation::from(Object::unknown_infix_operator(
                         lhs.as_ref(),
                         rhs.as_ref(),
@@ -381,7 +402,7 @@ mod test {
             "5 + true".evaluate(&mut Environment::new()),
             Object::error_from("type mismatch: INTEGER + BOOLEAN").into()
         );
-        // todo: fix this, not propagating error correctly
+        // TODO: fix this, not propagating error correctly
         /*
         assert_eq!(
             "5 + (true + 5);".evaluate(&mut Environment::new()),
@@ -407,6 +428,10 @@ mod test {
         assert_eq!(
             "if(10 > 1){ if(10 > 1){ return true + false}}".evaluate(&mut Environment::new()),
             Object::error_from("unknown operator: BOOLEAN + BOOLEAN").into()
+        );
+        assert_eq!(
+            "\"hello \" - \"world!\"".evaluate(&mut Environment::new()),
+            Object::error_from("unknown operator: STRING - STRING").into()
         );
         assert_eq!(
             "foobar".evaluate(&mut Environment::new()),
@@ -464,6 +489,30 @@ mod test {
             "let newAdder = fn(x) { fn(y) {x + y } }; let addTwo = newAdder(2); addTwo(2)"
                 .evaluate(&mut Environment::new()),
             Object::from(4).into()
+        );
+    }
+
+    #[test]
+    fn string_literal() {
+        assert_eq!(
+            "\"Hello world!\"".evaluate(&mut Environment::new()),
+            Object::String {
+                value: Rc::new("Hello world!".to_string()),
+                context: ObjectContext::Eval
+            }
+            .into()
+        );
+    }
+
+    #[test]
+    fn string_concatenation() {
+        assert_eq!(
+            "\"Hello \" + \"world!\"".evaluate(&mut Environment::new()),
+            Object::String {
+                value: Rc::new("Hello world!".to_string()),
+                context: ObjectContext::Eval
+            }
+            .into()
         );
     }
 }
