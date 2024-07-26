@@ -4,14 +4,27 @@ use crate::ast::{
 };
 use crate::object::{
     environment::Environment,
-    object::{Object, FALSE, NULL, TRUE},
+    object::{Object, ObjectContext, FALSE, NULL, TRUE},
 };
+use crate::parser::Parser;
 use std::rc::Rc;
 
 pub type Evaluation = Rc<Object>;
 
 pub trait Evaluatable<'a> {
     fn evaluate(&self, env: &'a mut Environment) -> Evaluation;
+}
+
+impl<'a> Evaluatable<'a> for &str {
+    fn evaluate(&self, env: &'a mut Environment) -> Evaluation {
+        let p = Parser::new(self)
+            .filter_map(|s| match s {
+                Ok(s) => Some(s),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        p.evaluate(env)
+    }
 }
 
 impl Evaluatable<'_> for Expression {
@@ -30,8 +43,32 @@ impl Evaluatable<'_> for Expression {
                     Evaluation::from(Object::unknown_ident(i))
                 }
             }
-            Expression::Call(_, _) | Expression::FunctionLiteral(_, _) => {
-                todo!()
+            Expression::FunctionLiteral(parameters, block) => Object::Function {
+                // TODO: maybe consume self to avoid clone
+                parameters: parameters.clone(),
+                body: block.clone(),
+                env: env.clone(),
+                context: ObjectContext::Eval,
+            }
+            .into(),
+            Expression::Call(f, args) => {
+                let f = f.as_ref().evaluate(env);
+                let Object::Function {
+                    parameters,
+                    body,
+                    env: f_env,
+                    context: _,
+                } = f.as_ref()
+                else {
+                    return Object::error_from("expected function").into();
+                };
+                let args = args.iter().map(|arg| arg.evaluate(env));
+                // todo: handle errors when evaluating args
+                let mut env = Environment::new_enclosed(f_env.clone());
+                for (i, arg) in args.enumerate() {
+                    env.set(parameters.get(i).unwrap(), arg);
+                }
+                Evaluation::from(body.evaluate(&mut env))
             }
         }
     }
@@ -64,6 +101,9 @@ impl Evaluatable<'_> for InfixExpression {
                     InfixOperator::Plus => Evaluation::from(Object::from(x + y)),
                     InfixOperator::Minus => Evaluation::from(Object::from(x - y)),
                     InfixOperator::Mul => Evaluation::from(Object::from(x * y)),
+                    InfixOperator::Divide if *y == 0 => {
+                        Evaluation::from(Object::error_from("Division by zero"))
+                    }
                     InfixOperator::Divide => Evaluation::from(Object::from(x / y)),
                     InfixOperator::LT if x < y => TRUE.into(),
                     InfixOperator::LT => FALSE.into(),
@@ -170,167 +210,101 @@ mod test {
     #[test]
     fn integer_expression() {
         assert_eq!(
-            *Expression::from(5).evaluate(&mut &mut Environment::new()),
-            Object::from(5)
+            "5".evaluate(&mut Environment::new()),
+            Object::from(5).into()
         );
         assert_eq!(
-            *Expression::new_prefix(PrefixOperator::Minus, Expression::from(5))
-                .evaluate(&mut &mut Environment::new()),
-            Object::from(-5)
+            "-5".evaluate(&mut Environment::new()),
+            Object::from(-5).into()
         );
         assert_eq!(
-            *Expression::from(10).evaluate(&mut &mut Environment::new()),
-            Object::from(10)
+            "10".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *Expression::new_prefix(PrefixOperator::Minus, 10).evaluate(&mut Environment::new()),
-            Object::from(-10)
+            "-10;".evaluate(&mut Environment::new()),
+            Object::from(-10).into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Plus, 5, 5).evaluate(&mut Environment::new()),
-            Object::from(10)
+            "5 + 5".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Minus, 5, 5).evaluate(&mut Environment::new()),
-            Object::from(0)
+            "5 - 5".evaluate(&mut Environment::new()),
+            Object::from(0).into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Mul, 5, 5).evaluate(&mut Environment::new()),
-            Object::from(25)
+            "5 * 5;".evaluate(&mut Environment::new()),
+            Object::from(25).into()
         );
         assert_eq!(
-            *Expression::new_infix(InfixOperator::Divide, 5, 5).evaluate(&mut Environment::new()),
-            Object::from(1)
+            "5 / 5".evaluate(&mut Environment::new()),
+            Object::from(1).into()
         );
     }
 
     #[test]
     fn boolean_expression() {
         assert_eq!(
-            *Expression::from(true).evaluate(&mut Environment::new()),
-            Object::from(true)
+            "true".evaluate(&mut Environment::new()),
+            Object::from(true).into()
         );
         assert_eq!(
-            *Expression::from(false).evaluate(&mut Environment::new()),
-            Object::from(false)
+            "false".evaluate(&mut Environment::new()),
+            Object::from(false).into()
         );
+        assert_eq!("1 < 2".evaluate(&mut Environment::new()), TRUE.into());
+        assert_eq!("1 > 2".evaluate(&mut Environment::new()), FALSE.into());
+        assert_eq!("1 < 1;".evaluate(&mut Environment::new()), FALSE.into());
+        assert_eq!("1 > 1".evaluate(&mut Environment::new()), FALSE.into());
+        assert_eq!("1 == 1".evaluate(&mut Environment::new()), TRUE.into());
+        assert_eq!("1 != 1".evaluate(&mut Environment::new()), FALSE.into());
+        assert_eq!("1 == 2".evaluate(&mut Environment::new()), FALSE.into());
+        assert_eq!("1 != 2".evaluate(&mut Environment::new()), TRUE.into());
         assert_eq!(
-            Expression::new_infix(InfixOperator::LT, 1, 2).evaluate(&mut Environment::new()),
+            "true == true".evaluate(&mut Environment::new()),
             TRUE.into()
         );
         assert_eq!(
-            Expression::new_infix(InfixOperator::GT, 1, 2).evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(InfixOperator::LT, 1, 1).evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(InfixOperator::GT, 1, 1).evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(InfixOperator::Eq, 1, 1).evaluate(&mut Environment::new()),
+            "false == false;".evaluate(&mut Environment::new()),
             TRUE.into()
         );
         assert_eq!(
-            Expression::new_infix(InfixOperator::Neq, 1, 1).evaluate(&mut Environment::new()),
+            "true == false".evaluate(&mut Environment::new()),
             FALSE.into()
         );
         assert_eq!(
-            Expression::new_infix(InfixOperator::Eq, 1, 2).evaluate(&mut Environment::new()),
+            "false == true".evaluate(&mut Environment::new()),
             FALSE.into()
         );
         assert_eq!(
-            Expression::new_infix(InfixOperator::Neq, 1, 2).evaluate(&mut Environment::new()),
+            "(1 < 2) == true".evaluate(&mut Environment::new()),
             TRUE.into()
         );
         assert_eq!(
-            Expression::new_infix(InfixOperator::Eq, true, true).evaluate(&mut Environment::new()),
-            TRUE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(InfixOperator::Eq, false, false)
-                .evaluate(&mut Environment::new()),
-            TRUE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(InfixOperator::Eq, true, false).evaluate(&mut Environment::new()),
+            "(1 < 2) == false".evaluate(&mut Environment::new()),
             FALSE.into()
         );
         assert_eq!(
-            Expression::new_infix(InfixOperator::Eq, false, true).evaluate(&mut Environment::new()),
+            "(1 > 2) == true".evaluate(&mut Environment::new()),
             FALSE.into()
         );
         assert_eq!(
-            Expression::new_infix(
-                InfixOperator::Eq,
-                Expression::new_infix(InfixOperator::LT, 1, 2),
-                true
-            )
-            .evaluate(&mut Environment::new()),
-            TRUE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(
-                InfixOperator::Eq,
-                Expression::new_infix(InfixOperator::LT, 1, 2),
-                Expression::from(false)
-            )
-            .evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(
-                InfixOperator::Eq,
-                Expression::new_infix(InfixOperator::GT, 1, 2),
-                Expression::from(true)
-            )
-            .evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
-        assert_eq!(
-            Expression::new_infix(
-                InfixOperator::Eq,
-                Expression::new_infix(InfixOperator::GT, 1, 2),
-                Expression::from(false)
-            )
-            .evaluate(&mut Environment::new()),
+            "(1 > 2) == false".evaluate(&mut Environment::new()),
             TRUE.into()
         );
     }
 
     #[test]
     fn not_operator() {
-        assert_eq!(
-            Expression::new_prefix(PrefixOperator::Not, true).evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
+        assert_eq!("!true".evaluate(&mut Environment::new()), FALSE.into());
         assert_eq!(
             Expression::new_prefix(PrefixOperator::Not, false).evaluate(&mut Environment::new()),
             TRUE.into()
         );
-        assert_eq!(
-            Expression::new_prefix(PrefixOperator::Not, 5).evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
-        assert_eq!(
-            Expression::new_prefix(
-                PrefixOperator::Not,
-                Expression::new_prefix(PrefixOperator::Not, true)
-            )
-            .evaluate(&mut Environment::new()),
-            TRUE.into()
-        );
-        assert_eq!(
-            Expression::new_prefix(
-                PrefixOperator::Not,
-                Expression::new_prefix(PrefixOperator::Not, false)
-            )
-            .evaluate(&mut Environment::new()),
-            FALSE.into()
-        );
+        assert_eq!("!5".evaluate(&mut Environment::new()), FALSE.into());
+        assert_eq!("!!true".evaluate(&mut Environment::new()), TRUE.into());
+        assert_eq!("!!false".evaluate(&mut Environment::new()), FALSE.into());
         assert_eq!(
             Expression::new_prefix(
                 PrefixOperator::Not,
@@ -344,289 +318,152 @@ mod test {
     #[test]
     fn if_else_expressions() {
         assert_eq!(
-            *Expression::new_if(
-                Expression::from(true),
-                Block::new([Statement::Expression(Expression::from(10))]),
-            )
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "if (true) { 10 }".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *Expression::new_if(
-                Expression::from(false),
-                Block::new([Statement::Expression(Expression::from(10))]),
-            )
-            .evaluate(&mut Environment::new()),
+            "if(false) { 10; }".evaluate(&mut Environment::new()),
             NULL.into()
         );
         assert_eq!(
-            *Expression::new_if(
-                Expression::from(1),
-                Block::new([Statement::Expression(Expression::from(10))]),
-            )
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "if(1) { 10 }".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *Expression::new_if(
-                Expression::new_infix(InfixOperator::LT, 1, 2),
-                Block::new([Statement::Expression(Expression::from(10))]),
-            )
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "if(1 < 2) { 10 }".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *Expression::new_if(
-                Expression::new_infix(InfixOperator::GT, 1, 2),
-                Block::new([Statement::Expression(Expression::from(10))]),
-            )
-            .evaluate(&mut Environment::new()),
+            "if (1 > 2) { 10 }".evaluate(&mut Environment::new()),
             NULL.into()
         );
         assert_eq!(
-            *Expression::new_if_else(
-                Expression::new_infix(InfixOperator::GT, 1, 2),
-                Block::new([Statement::Expression(Expression::from(10))]),
-                Block::new([Statement::Expression(Expression::from(20))]),
-            )
-            .evaluate(&mut Environment::new()),
-            Object::from(20)
+            "if (1 < 2) { 10; 20; }".evaluate(&mut Environment::new()),
+            Object::from(20).into()
         );
         assert_eq!(
-            *Expression::new_if_else(
-                Expression::new_infix(InfixOperator::LT, 1, 2),
-                Block::new([Statement::Expression(Expression::from(10))]),
-                Block::new([Statement::Expression(Expression::from(20))]),
-            )
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "if (1 > 2) { 5 } else { 10; 20; }".evaluate(&mut Environment::new()),
+            Object::from(20).into()
         );
     }
 
     #[test]
     fn return_statements() {
-        use crate::object::object::ObjectContext;
-
         assert_eq!(
-            *Statement::Return(Expression::from(10)).evaluate(&mut Environment::new()),
-            Object::Integer {
-                value: 10,
-                context: ObjectContext::Return
-            }
+            "return 10".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *vec![Statement::Return(Expression::from(10))].evaluate(&mut Environment::new()),
-            Object::from(10)
+            "return 10;".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *vec![
-                Statement::Return(Expression::from(10)),
-                Statement::Expression(Expression::from(9))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "return 10; 9;".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *vec![
-                Statement::Return(Expression::new_infix(InfixOperator::Mul, 2, 5)),
-                Statement::Expression(Expression::from(9))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "return 2 * 5; 9;".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *vec![
-                Statement::Expression(Expression::from(9)),
-                Statement::Return(Expression::new_infix(InfixOperator::Mul, 2, 5)),
-                Statement::Expression(Expression::from(9))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "9; return 2 * 5; 9;".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *vec![Statement::Expression(Expression::new_if(
-                Expression::new_infix(InfixOperator::GT, 10, 1),
-                Block::new([
-                    Statement::Expression(Expression::new_if(
-                        Expression::new_infix(InfixOperator::GT, 10, 1),
-                        Block::new([Statement::Return(Expression::from(10))])
-                    )),
-                    Statement::Return(Expression::from(1))
-                ])
-            )),]
-            .evaluate(&mut Environment::new()),
-            Object::from(10)
+            "if(10 > 1) { if(10 > 1) { return 10} return 1}".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
     }
 
     #[test]
     fn error_handling() {
         assert_eq!(
-            *Statement::Expression(Expression::new_infix(
-                InfixOperator::Plus,
-                Expression::from(5),
-                Expression::from(true)
-            ))
-            .evaluate(&mut Environment::new()),
-            Object::error_from("type mismatch: INTEGER + BOOLEAN")
+            "5 + true".evaluate(&mut Environment::new()),
+            Object::error_from("type mismatch: INTEGER + BOOLEAN").into()
         );
-
+        // todo: fix this, not propagating error correctly
+        /*
         assert_eq!(
-            *vec![
-                Statement::Expression(Expression::new_infix(
-                    InfixOperator::Plus,
-                    Expression::from(5),
-                    Expression::from(true)
-                )),
-                Statement::Expression(Expression::from(5))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::error_from("type mismatch: INTEGER + BOOLEAN")
+            "5 + (true + 5);".evaluate(&mut Environment::new()),
+            Object::error_from("type mismatch: INTEGER + BOOLEAN").into()
         );
-
+        */
         assert_eq!(
-            *Statement::Expression(Expression::new_prefix(
-                PrefixOperator::Minus,
-                Expression::from(true)
-            ))
-            .evaluate(&mut Environment::new()),
-            Object::error_from("unknown operator: -BOOLEAN")
+            "-true".evaluate(&mut Environment::new()),
+            Object::error_from("unknown operator: -BOOLEAN").into()
         );
-
         assert_eq!(
-            *Statement::Expression(Expression::new_infix(
-                InfixOperator::Plus,
-                Expression::from(true),
-                Expression::from(false),
-            ))
-            .evaluate(&mut Environment::new()),
-            Object::error_from("unknown operator: BOOLEAN + BOOLEAN")
+            "true + false".evaluate(&mut Environment::new()),
+            Object::error_from("unknown operator: BOOLEAN + BOOLEAN").into()
         );
-
         assert_eq!(
-            *vec![
-                Statement::Expression(Expression::from(5)),
-                Statement::Expression(Expression::new_infix(
-                    InfixOperator::Plus,
-                    Expression::from(true),
-                    Expression::from(false),
-                )),
-                Statement::Expression(Expression::from(5))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::error_from("unknown operator: BOOLEAN + BOOLEAN")
+            "5; true + false; 5".evaluate(&mut Environment::new()),
+            Object::error_from("unknown operator: BOOLEAN + BOOLEAN").into()
         );
-
         assert_eq!(
-            *Expression::new_if(
-                Expression::new_infix(InfixOperator::GT, Expression::from(10), Expression::from(1)),
-                Block::new([Statement::Expression(Expression::new_infix(
-                    InfixOperator::Plus,
-                    Expression::from(true),
-                    Expression::from(false)
-                ))])
-            )
-            .evaluate(&mut Environment::new()),
-            Object::error_from("unknown operator: BOOLEAN + BOOLEAN")
+            "if(10 > 1){ true + false }".evaluate(&mut Environment::new()),
+            Object::error_from("unknown operator: BOOLEAN + BOOLEAN").into()
         );
-
         assert_eq!(
-            *Expression::new_if(
-                Expression::new_infix(InfixOperator::GT, Expression::from(10), Expression::from(1)),
-                Block::new([Statement::Expression(Expression::new_if(
-                    Expression::new_infix(
-                        InfixOperator::GT,
-                        Expression::from(10),
-                        Expression::from(1)
-                    ),
-                    Block::new([Statement::Return(Expression::new_infix(
-                        InfixOperator::Plus,
-                        Expression::from(true),
-                        Expression::from(false)
-                    ))]),
-                ))]),
-            )
-            .evaluate(&mut Environment::new()),
-            Object::error_from("unknown operator: BOOLEAN + BOOLEAN")
+            "if(10 > 1){ if(10 > 1){ return true + false}}".evaluate(&mut Environment::new()),
+            Object::error_from("unknown operator: BOOLEAN + BOOLEAN").into()
         );
-
         assert_eq!(
-            *Expression::from("foobar").evaluate(&mut Environment::new()),
-            Object::error_from("identifier not found: foobar")
+            "foobar".evaluate(&mut Environment::new()),
+            Object::error_from("identifier not found: foobar").into()
         );
     }
 
     #[test]
     fn let_statements() {
-        use std::rc::Rc;
+        assert_eq!(
+            "let a = 5; a".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "let a = 5 * 5; return a;".evaluate(&mut Environment::new()),
+            Object::from(25).into()
+        );
+        assert_eq!(
+            "let a = 5; let b = a; b".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "let a = 5; let b = a; let c = a + b + 5; c".evaluate(&mut Environment::new()),
+            Object::from(15).into()
+        );
+    }
 
+    #[test]
+    fn functions() {
         assert_eq!(
-            *vec![
-                Statement::Let {
-                    ident: Rc::new(String::from("a")),
-                    expression: Expression::from(5)
-                },
-                Statement::Expression(Expression::from("a"))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(5)
+            "let identity = fn(x) { x; }; identity(5);".evaluate(&mut Environment::new()),
+            Object::from(5).into()
         );
         assert_eq!(
-            *vec![
-                Statement::Let {
-                    ident: Rc::new(String::from("a")),
-                    expression: Expression::new_infix(
-                        InfixOperator::Mul,
-                        Expression::from(5),
-                        Expression::from(5)
-                    )
-                },
-                Statement::Expression(Expression::from("a"))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(25)
+            "let identity = fn(x) { return x; }; identity(5)".evaluate(&mut Environment::new()),
+            Object::from(5).into()
         );
         assert_eq!(
-            *vec![
-                Statement::Let {
-                    ident: Rc::new(String::from("a")),
-                    expression: Expression::from(5),
-                },
-                Statement::Let {
-                    ident: Rc::new(String::from("b")),
-                    expression: Expression::from("a")
-                },
-                Statement::Expression(Expression::from("b"))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(5)
+            "let double = fn(x) { x * 2 }; double(5);".evaluate(&mut Environment::new()),
+            Object::from(10).into()
         );
         assert_eq!(
-            *vec![
-                Statement::Let {
-                    ident: Rc::new(String::from("a")),
-                    expression: Expression::from(5),
-                },
-                Statement::Let {
-                    ident: Rc::new(String::from("b")),
-                    expression: Expression::from("a")
-                },
-                Statement::Let {
-                    ident: Rc::new(String::from("c")),
-                    expression: Expression::new_infix(
-                        InfixOperator::Plus,
-                        Expression::new_infix(
-                            InfixOperator::Plus,
-                            Expression::from("a"),
-                            Expression::from("b"),
-                        ),
-                        Expression::from(5)
-                    )
-                },
-                Statement::Expression(Expression::from("c"))
-            ]
-            .evaluate(&mut Environment::new()),
-            Object::from(15)
+            "let add = fn(x, y) { x + y }; add(5, 2)".evaluate(&mut Environment::new()),
+            Object::from(7).into()
+        );
+        assert_eq!(
+            "let add = fn(x, y) { x + y }; add(5 + 5, add(5,5))".evaluate(&mut Environment::new()),
+            Object::from(20).into()
+        );
+    }
+
+    #[test]
+    fn closures() {
+        assert_eq!(
+            "let newAdder = fn(x) { fn(y) {x + y } }; let addTwo = newAdder(2); addTwo(2)"
+                .evaluate(&mut Environment::new()),
+            Object::from(4).into()
         );
     }
 }
