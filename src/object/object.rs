@@ -3,6 +3,34 @@ use crate::object::environment::Environment;
 use std::fmt;
 use std::rc::Rc;
 
+pub enum Builtins {
+    Len,
+}
+
+impl Builtins {
+    pub fn get(name: &str) -> Option<Self> {
+        match name {
+            "len" => Some(Self::Len),
+            _ => None,
+        }
+    }
+
+    pub fn evaluate(&self, args: &[Rc<Object>]) -> Object {
+        match self {
+            Self::Len if args.len() == 1 => match *args[0] {
+                Object::String { ref value, .. } => Object::from(value.len() as i64),
+                ref o => {
+                    Object::Error(format!("argument to `len` not supported, got {}", o.kind()))
+                }
+            },
+            Self::Len => Object::Error(format!(
+                "wrong number of arguments. got={}, want=1",
+                args.len()
+            )),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum ObjectContext {
     Return,

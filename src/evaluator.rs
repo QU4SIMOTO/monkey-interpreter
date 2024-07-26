@@ -4,7 +4,7 @@ use crate::ast::{
 };
 use crate::object::{
     environment::Environment,
-    object::{Object, ObjectContext, FALSE, NULL, TRUE},
+    object::{Builtins, Object, ObjectContext, FALSE, NULL, TRUE},
 };
 use crate::parser::Parser;
 use std::rc::Rc;
@@ -57,23 +57,37 @@ impl Evaluatable<'_> for Expression {
             }
             .into(),
             Expression::Call(f, args) => {
-                let f = f.as_ref().evaluate(env);
-                let Object::Function {
+                if let Object::Function {
                     parameters,
                     body,
-                    env: f_env,
-                    context: _,
-                } = f.as_ref()
-                else {
-                    return Object::error_from("expected function").into();
-                };
-                let args = args.iter().map(|arg| arg.evaluate(env));
-                // TODO: handle errors when evaluating args
-                let mut env = Environment::new_enclosed(f_env.clone());
-                for (i, arg) in args.enumerate() {
-                    env.set(parameters.get(i).unwrap(), arg);
+                    env: call_env,
+                    ..
+                } = f.as_ref().evaluate(env).as_ref()
+                {
+                    let mut call_env = Environment::new_enclosed(call_env.clone());
+                    for (arg, param) in args
+                        .iter()
+                        .map(|arg| arg.evaluate(env))
+                        .zip(parameters.iter())
+                    {
+                        call_env.set(param, arg);
+                    }
+                    Evaluation::from(body.evaluate(&mut call_env))
+                } else {
+                    if let Expression::Ident(x) = f.as_ref() {
+                        if let Some(builtin) = Builtins::get(x) {
+                            Evaluation::from(builtin.evaluate(
+                                &args.iter().map(|arg| arg.evaluate(env)).collect::<Vec<_>>(),
+                            ))
+                        } else {
+                            Evaluation::from(Object::Error(format!(
+                                "no builtin function found for {x}"
+                            )))
+                        }
+                    } else {
+                        Evaluation::from(Object::error_from("expected identifier"))
+                    }
                 }
-                Evaluation::from(body.evaluate(&mut env))
             }
         }
     }
@@ -513,6 +527,30 @@ mod test {
                 context: ObjectContext::Eval
             }
             .into()
+        );
+    }
+
+    #[test]
+    fn builtin_functions() {
+        assert_eq!(
+            "len(\"\")".evaluate(&mut Environment::new()),
+            Object::from(0).into()
+        );
+        assert_eq!(
+            "len(\"four\")".evaluate(&mut Environment::new()),
+            Object::from(4).into()
+        );
+        assert_eq!(
+            "len(\"hello world\")".evaluate(&mut Environment::new()),
+            Object::from(11).into()
+        );
+        assert_eq!(
+            "len(1)".evaluate(&mut Environment::new()),
+            Object::error_from("argument to `len` not supported, got INTEGER").into()
+        );
+        assert_eq!(
+            "len(\"one\", \"two\")".evaluate(&mut Environment::new()),
+            Object::error_from("wrong number of arguments. got=2, want=1").into()
         );
     }
 }
