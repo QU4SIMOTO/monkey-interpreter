@@ -1,6 +1,6 @@
 use crate::ast::{
-    Block, Expression, IfExpression, InfixOperator, Precendence, PrefixOperator, Program,
-    Statement, LOWEST_PRECEDENCE,
+    Block, Expression, IfExpression, InfixOperator, Precendence, PrefixOperator, Statement,
+    LOWEST_PRECEDENCE,
 };
 use crate::error::MonkeyError;
 use crate::lexer::Lexer;
@@ -28,11 +28,6 @@ impl<'a> Parser<'a> {
     fn next_token(&mut self) {
         self.current_token = self.next_token.take();
         self.next_token = self.lexer.next();
-    }
-
-    pub fn parse_program(input: &'a str) -> Result<Program, MonkeyError> {
-        // TODO: format output Result<Vec<Statement>, String>
-        todo!()
     }
 
     fn parse_let_statement(&mut self) -> Result<Statement, MonkeyError> {
@@ -156,27 +151,6 @@ impl<'a> Parser<'a> {
             consequence,
             alternative,
         })))
-    }
-
-    fn parse_block_statement(&mut self) -> Result<Block, MonkeyError> {
-        let mut statements: Vec<Statement> = Vec::new();
-        self.next_token();
-        while self.current_token.as_ref().map_or(false, |current_token| {
-            !(current_token.is_same_variant(Token::Rbrace)
-                || current_token.is_same_variant(Token::EOF))
-        }) {
-            // TODO: remove duplication with parse_statement
-            let statement = match self.current_token.as_ref().unwrap() {
-                Token::Let => self.parse_let_statement(),
-                Token::Return => self.parse_return_statement(),
-                _ => self.parse_expression_statement(),
-            };
-            if let Ok(statement) = statement {
-                statements.push(statement);
-            }
-            self.next_token();
-        }
-        Ok(Block::new(statements))
     }
 
     fn parse_infix_expression(&mut self, lhs: Expression) -> Result<Expression, MonkeyError> {
@@ -351,6 +325,26 @@ impl<'a> Parser<'a> {
         };
         self.next_token();
         statement
+    }
+
+    fn parse_block_statement(&mut self) -> Result<Block, MonkeyError> {
+        let mut statements: Vec<Statement> = Vec::new();
+        self.next_token();
+        while self.current_token.as_ref().map_or(false, |current_token| {
+            !(current_token.is_same_variant(Token::Rbrace)
+                || current_token.is_same_variant(Token::EOF))
+        }) {
+            let statement = match self.current_token.as_ref().unwrap() {
+                Token::Let => self.parse_let_statement(),
+                Token::Return => self.parse_return_statement(),
+                _ => self.parse_expression_statement(),
+            };
+            if let Ok(statement) = statement {
+                statements.push(statement);
+            }
+            self.next_token();
+        }
+        Ok(Block::new(statements))
     }
 }
 
