@@ -104,7 +104,7 @@ impl Token {
         Self::Ident(Rc::new(ident.into()))
     }
 
-    pub(crate) fn new_string(ident: impl Into<String>) -> Self {
+    pub fn new_string(ident: impl Into<String>) -> Self {
         Self::String(Rc::new(ident.into()))
     }
 }
