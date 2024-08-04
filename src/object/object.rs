@@ -60,6 +60,10 @@ pub enum Object {
         env: Environment,
         context: ObjectContext,
     },
+    Array {
+        elements: Vec<Rc<Object>>,
+        context: ObjectContext,
+    },
     Error(String),
 }
 
@@ -105,6 +109,10 @@ impl Object {
                 env: env.clone(),
                 context,
             },
+            Self::Array { ref elements, .. } => Self::Array {
+                elements: elements.clone(),
+                context,
+            },
         }
     }
 
@@ -124,6 +132,7 @@ impl Object {
             Self::Error { .. } => "ERROR",
             Self::Function { .. } => "FUNCTION",
             Self::String { .. } => "STRING",
+            Self::Array { .. } => "ARRAY",
         }
     }
 
@@ -177,11 +186,19 @@ impl fmt::Display for Object {
                         .iter()
                         .map(|p| p.as_str())
                         .collect::<Vec<_>>()
-                        .join(",")
+                        .join(", ")
                 )?;
                 write!(f, ")")?;
                 write!(f, "{body}")?;
                 Ok(())
+            }
+            Self::Array { ref elements, .. } => {
+                let elements = elements
+                    .iter()
+                    .map(|elem| elem.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "[{elements}]")
             }
         }
     }

@@ -1,6 +1,6 @@
 use crate::ast::{
-    Block, Expression, IfExpression, InfixExpression, InfixOperator, PrefixExpression,
-    PrefixOperator, Program, Statement,
+    Block, Expression, IfExpression, IndexExpression, InfixExpression, InfixOperator,
+    PrefixExpression, PrefixOperator, Program, Statement,
 };
 use crate::object::{
     environment::Environment,
@@ -89,8 +89,36 @@ impl Evaluatable<'_> for Expression {
                     }
                 }
             }
-            Expression::ArrayLiteral(e) => todo!(),
-            Expression::Index(e) => todo!(),
+            Expression::ArrayLiteral(elements) => {
+                let elements = elements
+                    .iter()
+                    .map(|elem| elem.evaluate(env))
+                    .collect::<Vec<_>>();
+                Evaluation::new(Object::Array {
+                    elements,
+                    context: ObjectContext::Eval,
+                })
+            }
+            Expression::Index(index_expresion) => {
+                let IndexExpression { lhs, index } = index_expresion.as_ref();
+                let lhs = lhs.evaluate(env);
+                let index = index.evaluate(env);
+                match (lhs.as_ref(), index.as_ref()) {
+                    (Object::Array { elements, .. }, Object::Integer { value, .. }) => elements
+                        .get(*value as usize)
+                        .map(|elem| elem.clone())
+                        .unwrap_or(Evaluation::from(NULL)),
+                    (_, e @ Object::Error(_)) | (e @ Object::Error(_), _) => {
+                        Evaluation::from(e.clone())
+                    }
+                    (o @ _, Object::Integer { .. }) | (Object::Array { .. }, o @ _) => {
+                        Evaluation::from(Object::error_from(format!(
+                            "index operator not supported: {o}"
+                        )))
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }
@@ -553,6 +581,59 @@ mod test {
         assert_eq!(
             "len(\"one\", \"two\")".evaluate(&mut Environment::new()),
             Object::error_from("wrong number of arguments. got=2, want=1").into()
+        );
+    }
+
+    #[test]
+    fn arrray_literal() {
+        assert_eq!(
+            "[1, 2 * 2, 3 + 3]".evaluate(&mut Environment::new()),
+            Object::Array {
+                elements: vec![
+                    Rc::new(Object::from(1)),
+                    Rc::new(Object::from(4)),
+                    Rc::new(Object::from(6))
+                ],
+                context: ObjectContext::Eval
+            }
+            .into()
+        )
+    }
+
+    #[test]
+    fn index_expressions() {
+        assert_eq!(
+            "[1, 2, 3][0]".evaluate(&mut Environment::new()),
+            Object::from(1).into()
+        );
+        assert_eq!(
+            "[1, 2, 3][1]".evaluate(&mut Environment::new()),
+            Object::from(2).into()
+        );
+        assert_eq!(
+            "[1, 2, 3][2]".evaluate(&mut Environment::new()),
+            Object::from(3).into()
+        );
+        assert_eq!(
+            "let i = 0; [1][i]".evaluate(&mut Environment::new()),
+            Object::from(1).into()
+        );
+        assert_eq!(
+            "let myArray = [1, 2, 3]; myArray[1] + myArray[2]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]"
+                .evaluate(&mut Environment::new()),
+            Object::from(2).into()
+        );
+        assert_eq!(
+            "[1, 2, 3][3]".evaluate(&mut Environment::new()),
+            NULL.into(),
+        );
+        assert_eq!(
+            "[1, 2, 3][-1]".evaluate(&mut Environment::new()),
+            NULL.into(),
         );
     }
 }
