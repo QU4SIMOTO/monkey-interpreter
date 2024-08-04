@@ -83,6 +83,7 @@ impl<'a> Parser<'a> {
                 | Token::Neq
                 | Token::LT
                 | Token::Lparen
+                | Token::Lbracket
                 | Token::GT => {
                     self.next_token();
                     lhs = self.parse_infix_expression(lhs)?;
@@ -112,6 +113,7 @@ impl<'a> Parser<'a> {
             Some(Token::Lparen) => self.parse_grouped_expression(),
             Some(Token::If) => self.parse_if_expression(),
             Some(Token::Function) => self.parse_function_literal(),
+            Some(Token::Lbracket) => self.parse_array_literal(),
             Some(ref token) => Err(MonkeyError::Parse(format!(
                 "Unable to parse prefix expression starting with {token}"
             ))),
@@ -169,6 +171,7 @@ impl<'a> Parser<'a> {
             | Token::Neq
             | Token::LT
             | Token::Lparen
+            | Token::Lbracket
             | Token::GT => InfixOperator::try_from(current_token),
             _ => {
                 return Err(MonkeyError::Parse(format!(
@@ -183,20 +186,40 @@ impl<'a> Parser<'a> {
         };
         let precendence = self.current_precedence();
         self.next_token();
-        if operator == InfixOperator::Call {
-            let arguments = self.parse_call_arguments()?;
-            return Ok(Expression::Call(Box::new(lhs), arguments));
+        match operator {
+            InfixOperator::Call => {
+                let arguments = self.parse_call_arguments()?;
+                Ok(Expression::Call(Box::new(lhs), arguments))
+            }
+            InfixOperator::Index => {
+                let rhs = self.parse_expression(LOWEST_PRECEDENCE)?;
+                self.expect_peek(Token::Rbracket)?;
+                Ok(Expression::new_index(lhs, rhs))
+            }
+            _ => {
+                let rhs = self.parse_expression(precendence)?;
+                Ok(Expression::new_infix(operator, lhs, rhs))
+            }
         }
-        let rhs = self.parse_expression(precendence)?;
-        Ok(Expression::new_infix(operator, lhs, rhs))
     }
 
     fn parse_call_arguments(&mut self) -> Result<Vec<Expression>, MonkeyError> {
+        self.parse_expression_list(Token::Rparen)
+    }
+
+    fn parse_array_literal(&mut self) -> Result<Expression, MonkeyError> {
+        self.next_token();
+        Ok(Expression::ArrayLiteral(
+            self.parse_expression_list(Token::Rbracket)?,
+        ))
+    }
+
+    fn parse_expression_list(&mut self, end: Token) -> Result<Vec<Expression>, MonkeyError> {
         let mut args = vec![];
         if self
             .current_token
             .as_ref()
-            .map_or(false, |token| token.is_same_variant(Token::Rparen))
+            .map_or(false, |token| token.is_same_variant(&end))
         {
             self.next_token();
             return Ok(args);
@@ -212,7 +235,7 @@ impl<'a> Parser<'a> {
             self.next_token();
             args.push(self.parse_expression(LOWEST_PRECEDENCE)?);
         }
-        self.expect_peek(Token::Rparen)?;
+        self.expect_peek(end)?;
         Ok(args)
     }
 
@@ -523,7 +546,7 @@ mod test {
                 "(-(5 + 5))",
                 "(!(true == true))",
                 "((a + add((b * c))) + d)",
-                "add(a,b,1,(2 * 3),(4 + 5),add(6,(7 * 8)))",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
                 "add((((a + b) + ((c * d) / f)) + g))",
             ]
         )
@@ -568,7 +591,7 @@ mod test {
                 Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
-            vec!["fn(){\n}", "fn(x){\n}", "fn(x,y,z){\n}",]
+            vec!["fn(){\n}", "fn(x){\n}", "fn(x, y, z){\n}",]
         );
     }
 
@@ -586,7 +609,42 @@ mod test {
                 Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
             })
             .collect::<Vec<_>>(),
-            vec!["foo()", "add(2,3)"]
+            vec!["foo()", "add(2, 3)"]
+        );
+    }
+
+    #[test]
+    fn array_literal() {
+        assert_eq!(
+            Parser::new("[1, 2 * 2, 3 + 3]")
+                .filter_map(|r| match r {
+                    Ok(s) => Some(s.to_string()),
+                    Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
+                })
+                .collect::<Vec<_>>(),
+            vec!["[1, (2 * 2), (3 + 3)]"]
+        )
+    }
+
+    #[test]
+    fn index_expression() {
+        assert_eq!(
+            Parser::new("a * [1, 2, 3, 4][b * c] * d")
+                .filter_map(|r| match r {
+                    Ok(s) => Some(s.to_string()),
+                    Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
+                })
+                .collect::<Vec<_>>(),
+            vec!["((a * ([1, 2, 3, 4][(b * c)])) * d)"]
+        );
+        assert_eq!(
+            Parser::new("add(a * b[2], b[1], 2 * [1, 2][1])")
+                .filter_map(|r| match r {
+                    Ok(s) => Some(s.to_string()),
+                    Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
+                })
+                .collect::<Vec<_>>(),
+            vec!["add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))"]
         );
     }
 }

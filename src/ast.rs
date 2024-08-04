@@ -45,6 +45,8 @@ pub enum Expression {
     FunctionLiteral(Vec<Rc<String>>, Block),
     Call(Box<Expression>, Vec<Expression>),
     StringLiteral(Rc<String>),
+    ArrayLiteral(Vec<Expression>),
+    Index(Box<IndexExpression>),
 }
 
 impl Expression {
@@ -61,11 +63,7 @@ impl Expression {
             operands: Box::from((lhs.into(), rhs.into())),
         })
     }
-    pub fn new_if_else(
-        condition: impl Into<Expression>,
-        consequence: Block,
-        alternative: Block,
-    ) -> Self {
+    pub fn new_if_else(condition: impl Into<Self>, consequence: Block, alternative: Block) -> Self {
         Self::If(Box::from(IfExpression {
             condition: condition.into(),
             consequence,
@@ -73,11 +71,18 @@ impl Expression {
         }))
     }
 
-    pub fn new_if(condition: impl Into<Expression>, consequence: Block) -> Self {
+    pub fn new_if(condition: impl Into<Self>, consequence: Block) -> Self {
         Self::If(Box::from(IfExpression {
             condition: condition.into(),
             consequence,
             alternative: None,
+        }))
+    }
+
+    pub fn new_index(lhs: impl Into<Self>, index: impl Into<Self>) -> Self {
+        Self::Index(Box::from(IndexExpression {
+            lhs: lhs.into(),
+            index: index.into(),
         }))
     }
 }
@@ -131,6 +136,12 @@ pub struct IfExpression {
     pub(crate) alternative: Option<Block>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct IndexExpression {
+    pub(crate) lhs: Expression,
+    pub(crate) index: Expression,
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PrefixOperator {
     Not,
@@ -148,6 +159,7 @@ pub enum InfixOperator {
     LT,
     GT,
     Call,
+    Index,
 }
 
 impl TryFrom<&Token> for PrefixOperator {
@@ -176,6 +188,7 @@ impl TryFrom<&Token> for InfixOperator {
             Token::LT => Ok(InfixOperator::LT),
             Token::GT => Ok(InfixOperator::GT),
             Token::Lparen => Ok(InfixOperator::Call),
+            Token::Lbracket => Ok(InfixOperator::Index),
             _ => Err(()),
         }
     }
@@ -201,6 +214,7 @@ impl Precendence for InfixOperator {
             InfixOperator::Plus | InfixOperator::Minus => 3,
             InfixOperator::Mul | InfixOperator::Divide => 4,
             InfixOperator::Call => 5,
+            InfixOperator::Index => 6,
         }
     }
 }
@@ -258,7 +272,7 @@ impl fmt::Display for Expression {
                     .iter()
                     .map(|parameter| parameter.to_string())
                     .collect::<Vec<_>>()
-                    .join(",");
+                    .join(", ");
                 write!(f, "fn({parameters}){block}")
             }
             Expression::Call(function, arguments) => {
@@ -266,10 +280,22 @@ impl fmt::Display for Expression {
                     .iter()
                     .map(|argument| argument.to_string())
                     .collect::<Vec<_>>()
-                    .join(",");
+                    .join(", ");
                 write!(f, "{function}({arguments})")
             }
             Expression::StringLiteral(s) => write!(f, "\"{s}\""),
+            Expression::ArrayLiteral(items) => {
+                let items = items
+                    .iter()
+                    .map(|item| item.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "[{items}]")
+            }
+            Expression::Index(e) => {
+                let IndexExpression { lhs, index } = e.as_ref();
+                write!(f, "({lhs}[{index}])")
+            }
         }
     }
 }
@@ -282,7 +308,8 @@ impl fmt::Display for PrefixExpression {
 impl fmt::Display for InfixExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (lhs, rhs) = self.operands.as_ref();
-        write!(f, "({} {} {})", lhs, self.operator, rhs)
+        let operator = self.operator;
+        write!(f, "({lhs} {operator} {rhs})")
     }
 }
 
@@ -298,6 +325,7 @@ impl fmt::Display for InfixOperator {
             InfixOperator::LT => write!(f, "<"),
             InfixOperator::GT => write!(f, ">"),
             InfixOperator::Call => write!(f, "call"),
+            InfixOperator::Index => write!(f, "index"),
         }
     }
 }
@@ -479,11 +507,7 @@ pub mod tests {
         );
         assert_eq!(
             Expression::If(Box::from(IfExpression {
-                condition: Expression::new_infix(
-                    InfixOperator::LT,
-                    Expression::from("x"),
-                    Expression::from("y")
-                ),
+                condition: Expression::new_infix(InfixOperator::LT, "x", "y",),
                 consequence: Block::new(vec![Statement::Expression(Expression::from("x"))]),
                 alternative: None,
             }))
@@ -523,7 +547,7 @@ pub mod tests {
                 ))]),
             )
             .to_string(),
-            "fn(x,y){\n(x + y)\n}"
+            "fn(x, y){\n(x + y)\n}"
         );
     }
 
@@ -534,20 +558,12 @@ pub mod tests {
                 Box::from(Expression::from("add")),
                 vec![
                     Expression::from(1),
-                    Expression::new_infix(
-                        InfixOperator::Mul,
-                        Expression::from(2),
-                        Expression::from(3)
-                    ),
-                    Expression::new_infix(
-                        InfixOperator::Plus,
-                        Expression::from(4),
-                        Expression::from(5)
-                    ),
+                    Expression::new_infix(InfixOperator::Mul, 2, 3),
+                    Expression::new_infix(InfixOperator::Plus, 4, 5,),
                 ]
             )
             .to_string(),
-            "add(1,(2 * 3),(4 + 5))"
+            "add(1, (2 * 3), (4 + 5))"
         );
     }
 
@@ -557,5 +573,40 @@ pub mod tests {
             Expression::StringLiteral(Rc::new("foo".into())).to_string(),
             "\"foo\""
         )
+    }
+
+    #[test]
+    fn display_array_literal() {
+        assert_eq!(Expression::ArrayLiteral(vec![]).to_string(), "[]");
+        assert_eq!(
+            Expression::ArrayLiteral(vec![
+                Expression::IntegerLiteral(1),
+                Expression::IntegerLiteral(2),
+                Expression::IntegerLiteral(3),
+            ])
+            .to_string(),
+            "[1, 2, 3]"
+        );
+        assert_eq!(
+            Expression::ArrayLiteral(vec![
+                Expression::new_infix(InfixOperator::Plus, 2, 3),
+                Expression::new_prefix(PrefixOperator::Not, Expression::Boolean(true)),
+                Expression::ArrayLiteral(vec![])
+            ])
+            .to_string(),
+            "[(2 + 3), (!true), []]"
+        );
+    }
+
+    #[test]
+    fn display_index_expression() {
+        assert_eq!(
+            Expression::new_index(
+                Expression::Ident(Rc::new("foo".into())),
+                Expression::new_infix(InfixOperator::Plus, 2, 3),
+            )
+            .to_string(),
+            "(foo[(2 + 3)])"
+        );
     }
 }

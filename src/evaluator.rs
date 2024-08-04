@@ -89,6 +89,8 @@ impl Evaluatable<'_> for Expression {
                     }
                 }
             }
+            Expression::ArrayLiteral(e) => todo!(),
+            Expression::Index(e) => todo!(),
         }
     }
 }

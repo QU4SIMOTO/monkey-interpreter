@@ -86,6 +86,8 @@ impl Iterator for Lexer<'_> {
             ')' => Token::Rparen,
             '{' => Token::Lbrace,
             '}' => Token::Rbrace,
+            '[' => Token::Lbracket,
+            ']' => Token::Rbracket,
             ',' => Token::Comma,
             ';' => Token::Semicolon,
             _ => Token::Illegal,
@@ -140,7 +142,8 @@ mod test {
             10 == 10;
             10 != 9;
             \"foobar\"
-            \"foo bar\""
+            \"foo bar\"
+            [1,2];"
             ),
             vec![
                 Token::Let,
@@ -205,6 +208,12 @@ mod test {
                 Token::Semicolon,
                 Token::new_string("foobar"),
                 Token::new_string("foo bar"),
+                Token::Lbracket,
+                Token::Int(1),
+                Token::Comma,
+                Token::Int(2),
+                Token::Rbracket,
+                Token::Semicolon,
                 Token::EOF,
             ]
         )
