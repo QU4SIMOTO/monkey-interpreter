@@ -19,6 +19,7 @@ impl Builtins {
         match self {
             Self::Len if args.len() == 1 => match *args[0] {
                 Object::String { ref value, .. } => Object::from(value.len() as i64),
+                Object::Array { ref elements, .. } => Object::from(elements.len() as i64),
                 ref o => {
                     Object::Error(format!("argument to `len` not supported, got {}", o.kind()))
                 }

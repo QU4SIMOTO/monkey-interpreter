@@ -582,6 +582,18 @@ mod test {
             "len(\"one\", \"two\")".evaluate(&mut Environment::new()),
             Object::error_from("wrong number of arguments. got=2, want=1").into()
         );
+        assert_eq!(
+            "let x = [1, 2, 3]; len(x)".evaluate(&mut Environment::new()),
+            Object::from(3).into()
+        );
+        assert_eq!(
+            "let x = []; len(x)".evaluate(&mut Environment::new()),
+            Object::from(0).into()
+        );
+        assert_eq!(
+            "len([1, 2, 3])".evaluate(&mut Environment::new()),
+            Object::from(3).into()
+        );
     }
 
     #[test]
