@@ -594,6 +594,57 @@ mod test {
             "len([1, 2, 3])".evaluate(&mut Environment::new()),
             Object::from(3).into()
         );
+        assert_eq!("first([])".evaluate(&mut Environment::new()), NULL.into());
+        assert_eq!(
+            "first([1, 2])".evaluate(&mut Environment::new()),
+            Object::from(1).into()
+        );
+        assert_eq!(
+            "first(1)".evaluate(&mut Environment::new()),
+            Object::error_from("argument to `first` not supported, got INTEGER").into()
+        );
+        assert_eq!(
+            "first(\"one\", \"two\")".evaluate(&mut Environment::new()),
+            Object::error_from("wrong number of arguments. got=2, want=1").into()
+        );
+        assert_eq!("last([])".evaluate(&mut Environment::new()), NULL.into());
+        assert_eq!(
+            "last([1, 2])".evaluate(&mut Environment::new()),
+            Object::from(2).into()
+        );
+        assert_eq!(
+            "last(1)".evaluate(&mut Environment::new()),
+            Object::error_from("argument to `last` not supported, got INTEGER").into()
+        );
+        assert_eq!(
+            "last(\"one\", \"two\")".evaluate(&mut Environment::new()),
+            Object::error_from("wrong number of arguments. got=2, want=1").into()
+        );
+        assert_eq!(
+            "rest([1, 2])".evaluate(&mut Environment::new()),
+            Object::Array {
+                elements: vec![Rc::new(Object::from(2))],
+                context: ObjectContext::Eval
+            }
+            .into()
+        );
+        assert_eq!(
+            "rest([1])".evaluate(&mut Environment::new()),
+            Object::Array {
+                elements: vec![],
+                context: ObjectContext::Eval
+            }
+            .into()
+        );
+        assert_eq!("rest([])".evaluate(&mut Environment::new()), NULL.into());
+        assert_eq!(
+            "rest(1)".evaluate(&mut Environment::new()),
+            Object::error_from("argument to `rest` not supported, got INTEGER").into()
+        );
+        assert_eq!(
+            "rest(\"one\", \"two\")".evaluate(&mut Environment::new()),
+            Object::error_from("wrong number of arguments. got=2, want=1").into()
+        );
     }
 
     #[test]
