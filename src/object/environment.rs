@@ -2,7 +2,7 @@ use crate::object::object::Object;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Environment {
     store: HashMap<Rc<String>, Rc<Object>>,
     outer: Option<Box<Environment>>,

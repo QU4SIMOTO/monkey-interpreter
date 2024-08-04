@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 pub type Program = Vec<Statement>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Let {
         ident: Rc<String>,
@@ -21,7 +21,7 @@ impl Statement {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub statements: Vec<Statement>,
 }
@@ -34,7 +34,7 @@ impl Block {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Infix(InfixExpression),
     Prefix(PrefixExpression),
@@ -47,6 +47,7 @@ pub enum Expression {
     StringLiteral(Rc<String>),
     ArrayLiteral(Vec<Expression>),
     Index(Box<IndexExpression>),
+    HashLiteral(Vec<(Rc<Expression>, Rc<Expression>)>),
 }
 
 impl Expression {
@@ -117,26 +118,26 @@ impl From<String> for Expression {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct PrefixExpression {
     pub(crate) operator: PrefixOperator,
     pub(crate) operand: Box<Expression>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct InfixExpression {
     pub(crate) operator: InfixOperator,
     pub(crate) operands: Box<(Expression, Expression)>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct IfExpression {
     pub(crate) condition: Expression,
     pub(crate) consequence: Block,
     pub(crate) alternative: Option<Block>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct IndexExpression {
     pub(crate) lhs: Expression,
     pub(crate) index: Expression,
@@ -295,6 +296,14 @@ impl fmt::Display for Expression {
             Expression::Index(e) => {
                 let IndexExpression { lhs, index } = e.as_ref();
                 write!(f, "({lhs}[{index}])")
+            }
+            Expression::HashLiteral(map) => {
+                let pairs = map
+                    .iter()
+                    .map(|(key, value)| format!("{key}: {value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{{{pairs}}}")
             }
         }
     }
@@ -607,6 +616,25 @@ pub mod tests {
             )
             .to_string(),
             "(foo[(2 + 3)])"
+        );
+    }
+
+    #[test]
+    fn display_hash_literal() {
+        assert_eq!(Expression::HashLiteral(Vec::new()).to_string(), "{}");
+        assert_eq!(
+            Expression::HashLiteral(vec!(
+                (
+                    Rc::new(Expression::from("foo")),
+                    Rc::new(Expression::from(2))
+                ),
+                (
+                    Rc::new(Expression::from("bar")),
+                    Rc::new(Expression::from(4))
+                )
+            ))
+            .to_string(),
+            "{foo: 2, bar: 4}"
         );
     }
 }

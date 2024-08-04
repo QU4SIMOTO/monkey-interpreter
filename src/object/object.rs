@@ -79,7 +79,7 @@ pub enum ObjectContext {
     Eval,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Object {
     Integer {
         value: i64,
@@ -107,6 +107,28 @@ pub enum Object {
         context: ObjectContext,
     },
     Error(String),
+}
+
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Integer { value: a, .. }, Self::Integer { value: b, .. }) => a == b,
+            (Self::Boolean { value: a, .. }, Self::Boolean { value: b, .. }) => a == b,
+            (Self::String { value: a, .. }, Self::String { value: b, .. }) => a == b,
+            (Self::Null { .. }, Self::Null { .. }) => true,
+            (Self::Array { elements: a, .. }, Self::Array { elements: b, .. }) => {
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter().zip(b.iter()).fold(
+                    true,
+                    |acc, (a_elem, b_elem)| if a_elem == b_elem { acc } else { false },
+                )
+            }
+            (Self::Error(a), Self::Error(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl Object {

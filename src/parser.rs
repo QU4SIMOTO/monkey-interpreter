@@ -114,6 +114,7 @@ impl<'a> Parser<'a> {
             Some(Token::If) => self.parse_if_expression(),
             Some(Token::Function) => self.parse_function_literal(),
             Some(Token::Lbracket) => self.parse_array_literal(),
+            Some(Token::Lbrace) => self.parse_hash_literal(),
             Some(ref token) => Err(MonkeyError::Parse(format!(
                 "Unable to parse prefix expression starting with {token}"
             ))),
@@ -309,6 +310,27 @@ impl<'a> Parser<'a> {
         } else {
             Err(MonkeyError::Parse("Failed to parse identifier".into()))
         }
+    }
+
+    fn parse_hash_literal(&mut self) -> Result<Expression, MonkeyError> {
+        let mut pairs = vec![];
+        while Some(Token::Rbrace) != self.next_token {
+            self.next_token();
+            let key = self.parse_expression(LOWEST_PRECEDENCE)?;
+            self.expect_peek(Token::Colon)?;
+            self.next_token();
+            let value = self.parse_expression(LOWEST_PRECEDENCE)?;
+            pairs.push((Rc::new(key), Rc::new(value)));
+            if let Some(Token::Comma) = self.next_token {
+                self.next_token()
+            } else {
+                self.expect_peek(Token::Rbrace)?;
+                self.next();
+                return Ok(Expression::HashLiteral(pairs));
+            }
+        }
+        self.next_token();
+        Ok(Expression::HashLiteral(pairs))
     }
 
     fn expect_peek(&mut self, token: Token) -> Result<(), MonkeyError> {
@@ -645,6 +667,37 @@ mod test {
                 })
                 .collect::<Vec<_>>(),
             vec!["add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))"]
+        );
+    }
+
+    #[test]
+    fn hash_literal() {
+        assert_eq!(
+            Parser::new("{}")
+                .filter_map(|r| match r {
+                    Ok(s) => Some(s.to_string()),
+                    Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
+                })
+                .collect::<Vec<_>>(),
+            vec!["{}"]
+        );
+        assert_eq!(
+            Parser::new("{\"one\": 1, \"two\": 2, \"three\": 3}")
+                .filter_map(|r| match r {
+                    Ok(s) => Some(s.to_string()),
+                    Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
+                })
+                .collect::<Vec<_>>(),
+            vec!["{\"one\": 1, \"two\": 2, \"three\": 3}"]
+        );
+        assert_eq!(
+            Parser::new("{\"one\": 0 + 1, \"two\": 10 -8, \"three\": 15 / 5}")
+                .filter_map(|r| match r {
+                    Ok(s) => Some(s.to_string()),
+                    Err(MonkeyError::Parse(message)) => panic!("Parsing error: {message}"),
+                })
+                .collect::<Vec<_>>(),
+            vec!["{\"one\": (0 + 1), \"two\": (10 - 8), \"three\": (15 / 5)}"]
         );
     }
 }

@@ -24,7 +24,8 @@ where
             })
             .collect();
         let res = statements.evaluate(&mut env);
-        if res != NULL.into() {
+        write!(writer, "{res}\n",).unwrap();
+        if res.as_ref().kind() != NULL.kind() {
             write!(writer, "{res}\n",).unwrap();
         }
     }

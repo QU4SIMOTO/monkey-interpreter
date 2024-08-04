@@ -119,6 +119,7 @@ impl Evaluatable<'_> for Expression {
                     _ => unreachable!(),
                 }
             }
+            Expression::HashLiteral(_) => todo!(),
         }
     }
 }
