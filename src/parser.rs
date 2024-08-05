@@ -325,7 +325,6 @@ impl<'a> Parser<'a> {
                 self.next_token()
             } else {
                 self.expect_peek(Token::Rbrace)?;
-                self.next();
                 return Ok(Expression::HashLiteral(pairs));
             }
         }
@@ -699,5 +698,11 @@ mod test {
                 .collect::<Vec<_>>(),
             vec!["{\"one\": (0 + 1), \"two\": (10 - 8), \"three\": (15 / 5)}"]
         );
+        /*
+        assert_eq!(
+            "{1: 5}[fn(x){}]".evaluate(&mut Environment::new()),
+            Object::error_from("index operator not supported: [false]").into()
+        );
+        */
     }
 }

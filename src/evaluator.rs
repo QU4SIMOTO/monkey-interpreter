@@ -7,6 +7,7 @@ use crate::object::{
     object::{Builtins, Object, ObjectContext, FALSE, NULL, TRUE},
 };
 use crate::parser::Parser;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub type Evaluation = Rc<Object>;
@@ -108,18 +109,53 @@ impl Evaluatable<'_> for Expression {
                         .get(*value as usize)
                         .map(|elem| elem.clone())
                         .unwrap_or(Evaluation::from(NULL)),
+                    (Object::HashMap { map, .. }, b) => match b {
+                        Object::String { .. } | Object::Integer { .. } | Object::Boolean { .. } => {
+                            map.get(b).map(|b| b.clone()).unwrap_or(NULL.into())
+                        }
+                        o => Evaluation::from(Object::error_from(format!(
+                            "index operator not supported: {}",
+                            o.kind()
+                        ))),
+                    },
                     (_, e @ Object::Error(_)) | (e @ Object::Error(_), _) => {
                         Evaluation::from(e.clone())
                     }
                     (o @ _, Object::Integer { .. }) | (Object::Array { .. }, o @ _) => {
                         Evaluation::from(Object::error_from(format!(
-                            "index operator not supported: {o}"
+                            "index operator not supported: {}",
+                            o.kind()
                         )))
                     }
                     _ => unreachable!(),
                 }
             }
-            Expression::HashLiteral(_) => todo!(),
+            Expression::HashLiteral(pairs) => {
+                let mut map = HashMap::new();
+                for (key, value) in pairs.iter() {
+                    let key = (*key.evaluate(env)).clone();
+                    let value = (*value.evaluate(env)).clone();
+                    match (key, value) {
+                        (_, e @ Object::Error(_)) | (e @ Object::Error(_), _) => {
+                            return Evaluation::from(e.clone())
+                        }
+                        (a @ Object::HashMap { .. }, _)
+                        | (a @ Object::Array { .. }, _)
+                        | (a @ Object::Function { .. }, _) => {
+                            return Evaluation::from(Object::error_from(
+                                format!("unusable hash key: {}", a.kind()).as_str(),
+                            ))
+                        }
+                        (a, b) => {
+                            map.insert(Rc::new(a), Rc::new(b));
+                        }
+                    }
+                }
+                Evaluation::new(Object::HashMap {
+                    map,
+                    context: ObjectContext::Eval,
+                })
+            }
         }
     }
 }
@@ -698,6 +734,63 @@ mod test {
         assert_eq!(
             "[1, 2, 3][-1]".evaluate(&mut Environment::new()),
             NULL.into(),
+        );
+    }
+
+    #[test]
+    fn hash_literals() {
+        assert_eq!(
+            "let map = {\"foo\": 5}; map[\"foo\"]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "{\"foo\": 5}[\"foo\"]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "{\"foo\": 5}[\"bar\"]".evaluate(&mut Environment::new()),
+            NULL.into()
+        );
+        assert_eq!(
+            "let key = \"foo\"; {\"foo\": 5}[key]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!("{}[\"foo\"]".evaluate(&mut Environment::new()), NULL.into());
+        assert_eq!(
+            "{5: 5}[5]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "{true: 5}[true]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+        assert_eq!(
+            "{false: 5}[false]".evaluate(&mut Environment::new()),
+            Object::from(5).into()
+        );
+    }
+
+    #[test]
+    fn hash_literal_error_handling() {
+        assert_eq!(
+            "{fn(){}: 5}".evaluate(&mut Environment::new()),
+            Object::error_from("unusable hash key: FUNCTION").into()
+        );
+        assert_eq!(
+            "{[1, 2, 3]: 5}".evaluate(&mut Environment::new()),
+            Object::error_from("unusable hash key: ARRAY").into()
+        );
+        assert_eq!(
+            "{{1: 5}: 5}[false]".evaluate(&mut Environment::new()),
+            Object::error_from("unusable hash key: HASH").into()
+        );
+        assert_eq!(
+            "{1: 5}[[false]]".evaluate(&mut Environment::new()),
+            Object::error_from("index operator not supported: ARRAY").into()
+        );
+        assert_eq!(
+            "{1: 5}[fn(){}]".evaluate(&mut Environment::new()),
+            Object::error_from("index operator not supported: FUNCTION").into()
         );
     }
 }

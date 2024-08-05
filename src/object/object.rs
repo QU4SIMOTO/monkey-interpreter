@@ -1,5 +1,6 @@
 use crate::ast::{Block, InfixOperator, PrefixOperator};
 use crate::object::environment::Environment;
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -106,6 +107,11 @@ pub enum Object {
         elements: Vec<Rc<Object>>,
         context: ObjectContext,
     },
+    HashMap {
+        map: HashMap<Rc<Object>, Rc<Object>>,
+
+        context: ObjectContext,
+    },
     Error(String),
 }
 
@@ -127,6 +133,27 @@ impl PartialEq for Object {
             }
             (Self::Error(a), Self::Error(b)) => a == b,
             _ => false,
+        }
+    }
+}
+
+impl Eq for Object {
+    fn assert_receiver_is_total_eq(&self) {}
+}
+
+impl std::hash::Hash for Object {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Integer { value, .. } => value.hash(state),
+            Self::Boolean { value, .. } => value.hash(state),
+            Self::String { value, .. } => value.hash(state),
+            Self::Null { .. } => ().hash(state),
+            Self::Array { elements, .. } => {
+                for element in elements {
+                    let _ = &element.hash(state);
+                }
+            }
+            _ => unimplemented!(),
         }
     }
 }
@@ -177,6 +204,10 @@ impl Object {
                 elements: elements.clone(),
                 context,
             },
+            Self::HashMap { ref map, .. } => Self::HashMap {
+                map: map.clone(),
+                context,
+            },
         }
     }
 
@@ -197,6 +228,7 @@ impl Object {
             Self::Function { .. } => "FUNCTION",
             Self::String { .. } => "STRING",
             Self::Array { .. } => "ARRAY",
+            Self::HashMap { .. } => "HASH",
         }
     }
 
@@ -263,6 +295,14 @@ impl fmt::Display for Object {
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "[{elements}]")
+            }
+            Self::HashMap { ref map, .. } => {
+                let pairs = map
+                    .iter()
+                    .map(|(key, value)| format!("{key}: {value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "{{{pairs}}}")
             }
         }
     }
