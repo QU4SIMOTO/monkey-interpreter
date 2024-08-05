@@ -9,6 +9,7 @@ pub enum Builtins {
     First,
     Last,
     Rest,
+    Puts,
 }
 
 impl Builtins {
@@ -18,6 +19,7 @@ impl Builtins {
             "first" => Some(Self::First),
             "last" => Some(Self::Last),
             "rest" => Some(Self::Rest),
+            "puts" => Some(Self::Puts),
             _ => None,
         }
     }
@@ -66,6 +68,12 @@ impl Builtins {
                     o.kind()
                 ))),
             },
+            Self::Puts => {
+                for arg in args {
+                    println!("{arg}")
+                }
+                NULL.into()
+            }
             Self::Len | Self::First | Self::Last | Self::Rest => Rc::new(Object::Error(format!(
                 "wrong number of arguments. got={}, want=1",
                 args.len()
