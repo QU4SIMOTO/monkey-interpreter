@@ -1,6 +1,5 @@
 use crate::token::Token;
-use std::fmt;
-use std::rc::Rc;
+use std::{fmt, rc::Rc};
 
 pub type Program = Vec<Statement>;
 

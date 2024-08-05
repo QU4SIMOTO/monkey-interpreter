@@ -1,6 +1,8 @@
-use crate::evaluator::Evaluatable;
-use crate::object::{environment::Environment, object::NULL};
-use crate::parser::Parser;
+use crate::{
+    evaluator::Evaluatable,
+    object::{environment::Environment, object::NULL},
+    parser::Parser,
+};
 use std::io;
 
 const PROMPT: &[u8] = b">>";

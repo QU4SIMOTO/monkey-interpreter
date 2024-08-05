@@ -1,12 +1,15 @@
-use crate::ast::{
-    Block, Expression, IfExpression, IndexExpression, InfixExpression, InfixOperator,
-    PrefixExpression, PrefixOperator, Program, Statement,
+use crate::{
+    ast::{
+        Block, Expression, IfExpression, IndexExpression, InfixExpression, InfixOperator,
+        PrefixExpression, PrefixOperator, Program, Statement,
+    },
+    object::{
+        builtin::Builtins,
+        environment::Environment,
+        object::{Object, ObjectContext, FALSE, NULL, TRUE},
+    },
+    parser::Parser,
 };
-use crate::object::{
-    environment::Environment,
-    object::{Builtins, Object, ObjectContext, FALSE, NULL, TRUE},
-};
-use crate::parser::Parser;
 use std::collections::HashMap;
 use std::rc::Rc;
 

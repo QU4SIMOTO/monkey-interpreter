@@ -1,10 +1,12 @@
-use crate::ast::{
-    Block, Expression, IfExpression, InfixOperator, Precendence, PrefixOperator, Statement,
-    LOWEST_PRECEDENCE,
+use crate::{
+    ast::{
+        Block, Expression, IfExpression, InfixOperator, Precendence, PrefixOperator, Statement,
+        LOWEST_PRECEDENCE,
+    },
+    error::MonkeyError,
+    lexer::Lexer,
+    token::Token,
 };
-use crate::error::MonkeyError;
-use crate::lexer::Lexer;
-use crate::token::Token;
 use std::rc::Rc;
 
 pub struct Parser<'a> {

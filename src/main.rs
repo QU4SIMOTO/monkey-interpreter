@@ -1,8 +1,9 @@
 use clap::Parser;
 use monkey_interpreter::{evaluator::Evaluatable, object::environment::Environment, parser, repl};
-use std::fs;
-use std::io;
-use std::io::prelude::*;
+use std::{
+    fs,
+    io::{self, prelude::*},
+};
 
 #[derive(Parser)]
 #[command(version, about, long_about=None)]
