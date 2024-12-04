@@ -2,7 +2,7 @@
 Simple rust implementation of the interpreter outlined in [Writing An Interpreter In Go](https://interpreterbook.com).
 
 ## Description
-This is a learning project and is optimised or particularly well implemented. Most of the features outlined in the book are working but errors aren't yet handled correctly
+This is a learning project and isn't optimised or particularly well implemented. Most of the features outlined in the book are working but errors aren't yet handled correctly
 
 ## Running the interpreter 
 
